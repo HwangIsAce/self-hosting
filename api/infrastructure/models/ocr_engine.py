@@ -56,12 +56,31 @@ class OCREngine:
         if not image:
             raise ValueError("Failed to decode image")
         
+        # 프롬프트 생성
+        prompt = self._create_prompt(prompt_type, output_format)
+        
         # 프로세서로 입력 준비
         if self.processor:
-            inputs = self.processor(
-                images=image,
-                return_tensors="pt"
-            ).to(self.model.device)
+            # Qwen3VL processor는 text 파라미터가 필요할 수 있음
+            try:
+                inputs = self.processor(
+                    text=prompt,
+                    images=image,
+                    return_tensors="pt"
+                )
+            except TypeError:
+                # text 파라미터가 없는 경우 images만 사용
+                inputs = self.processor(
+                    images=image,
+                    return_tensors="pt"
+                )
+            
+            # device로 이동
+            if isinstance(inputs, dict):
+                inputs = {k: v.to(self.model.device) if isinstance(v, torch.Tensor) else v 
+                         for k, v in inputs.items()}
+            else:
+                inputs = inputs.to(self.model.device)
         else:
             # 프로세서가 없는 경우 직접 처리
             from torchvision import transforms
@@ -70,9 +89,6 @@ class OCREngine:
                 transforms.ToTensor(),
             ])
             inputs = {"pixel_values": transform(image).unsqueeze(0).to(self.model.device)}
-        
-        # 프롬프트 생성
-        prompt = self._create_prompt(prompt_type, output_format)
         
         # OCR 추론
         loop = asyncio.get_event_loop()

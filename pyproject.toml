@@ -1,7 +1,36 @@
 [project]
 name = "self-hosting"
 version = "0.1.0"
-description = "Add your description here"
+description = "OpenAI-compatible API Gateway for Qwen LLM, Qwen VLM, and Docling services"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    # Web Framework
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+    "python-multipart>=0.0.6",  # File uploads
+    
+    # Data Validation
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.1.0",
+    
+    # ML/AI
+    "torch>=2.1.0",
+    "torchvision>=0.16.0",  # For image transforms
+    "transformers>=4.35.0",
+    "accelerate>=0.25.0",  # For device_map support
+    "pillow>=10.0.0",  # PIL for image processing
+    
+    # HTTP Client
+    "httpx>=0.25.0",
+    "requests>=2.31.0",  # For image URL downloads
+    
+    # Retry Logic
+    "tenacity>=8.2.0",
+    
+    # Environment Variables
+    "python-dotenv>=1.0.0",
+    
+    # Additional dependencies
+    "protobuf>=4.25.0",  # For VLM models
+]
