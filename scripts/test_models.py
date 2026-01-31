@@ -180,10 +180,8 @@ async def test_ocr_engine():
             model_name=settings.OCR_MODEL_NAME,
             device_map=device_map
         )
-        
-        print("모델 로드 중... (시간이 걸릴 수 있습니다)")
-        engine.load_model()
-        print("✅ OCR 모델 로드 완료")
+        # 모델은 초기화 시 자동으로 로드됨 (싱글톤 패턴)
+        print("✅ OCR 엔진 초기화 완료 (모델 자동 로드됨)")
         print()
         
         # 간단한 테스트 이미지 생성 (1x1 픽셀)

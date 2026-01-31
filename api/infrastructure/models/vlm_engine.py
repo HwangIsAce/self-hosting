@@ -128,6 +128,8 @@ class VLMEngine:
         # 이미지 추출
         image_inputs = []
         for msg in processed_messages:
+            if msg is None:
+                continue
             content = msg.get("content", [])
             if isinstance(content, list):
                 for item in content:
@@ -188,20 +190,44 @@ class VLMEngine:
                 )
             )
         
-        # 디코딩 - 입력 길이만큼 제거
+        # 디코딩 - 입력 길이만큼 제거 (Qwen2-VL 문서 방식)
         input_ids = inputs["input_ids"]
-        generated_ids = outputs[0][input_ids.shape[1]:]
+        generated_ids_trimmed = outputs[0][input_ids.shape[1]:]
         
-        # 프로세서로 디코딩
-        generated_text = self.processor.decode(
-            generated_ids,
-            skip_special_tokens=True,
-            clean_up_tokenization_spaces=False
-        )
+        # Qwen2-VL 문서에 따르면 processor.batch_decode 또는 processor.tokenizer.decode 사용
+        # 단일 입력이므로 batch_decode를 리스트로 감싸서 사용
+        try:
+            # 먼저 batch_decode 시도 (Qwen2-VL 권장 방식)
+            if hasattr(self.processor, 'batch_decode'):
+                decoded_texts = self.processor.batch_decode(
+                    [generated_ids_trimmed],
+                    skip_special_tokens=True,
+                    clean_up_tokenization_spaces=False
+                )
+                generated_text = decoded_texts[0] if decoded_texts else ""
+            # tokenizer.decode 사용 (fallback)
+            elif hasattr(self.processor, 'tokenizer') and hasattr(self.processor.tokenizer, 'decode'):
+                generated_text = self.processor.tokenizer.decode(
+                    generated_ids_trimmed,
+                    skip_special_tokens=True,
+                    clean_up_tokenization_spaces=False
+                )
+            else:
+                raise AttributeError("Processor does not support batch_decode or tokenizer.decode")
+        except Exception as e:
+            logger.error(f"Failed to decode with processor: {e}")
+            # 최후의 수단: tokenizer 직접 접근
+            if hasattr(self.processor, 'tokenizer'):
+                generated_text = self.processor.tokenizer.decode(
+                    generated_ids_trimmed,
+                    skip_special_tokens=True
+                )
+            else:
+                raise
         
         # 토큰 사용량 계산
         prompt_tokens = input_ids.shape[1]
-        completion_tokens = len(generated_ids)
+        completion_tokens = len(generated_ids_trimmed)
         total_tokens = prompt_tokens + completion_tokens
         
         return {
