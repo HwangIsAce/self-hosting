@@ -2,6 +2,10 @@
 
 OpenAI-compatible API Gateway for Qwen LLM, VLM, and Docling/Chandra services running on RunPod RTX 4090 GPUs.
 
+## 📚 문서
+
+- [배포 가이드 (Deployment Guide)](./DEPLOYMENT.md) - 상세한 배포 및 설정 방법
+
 ## 🏗️ 아키텍처
 
 ```
@@ -13,11 +17,40 @@ Client → API Gateway (FastAPI) → RunPod Pods
 
 ## 🎯 사용 방법
 
-### 서버 시작
+### 빠른 시작
+
+#### Docker Compose (권장)
 
 ```bash
-uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
+# 환경 변수 설정 (.env 파일 생성)
+cp .env.example .env
+# .env 파일 편집: RunPod Pod 엔드포인트 입력
+
+# 배포
+docker-compose up -d
+
+# 또는 배포 스크립트 사용
+./scripts/deploy.sh
 ```
+
+#### 로컬 실행
+
+```bash
+# 의존성 설치
+uv sync
+
+# 서버 시작
+uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
+
+# 또는 스크립트 사용
+./scripts/start.sh
+```
+
+#### API 문서
+
+서버 실행 후 다음 URL에서 API 문서를 확인할 수 있습니다:
+- Swagger UI: http://localhost:8000/docs
+- ReDoc: http://localhost:8000/redoc
 
 ### API 사용 예시
 
