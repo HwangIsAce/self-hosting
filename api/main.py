@@ -12,7 +12,8 @@ from api.presentation.middleware.error_handler import (
 from api.presentation.middleware.logging import LoggingMiddleware
 from api.config.settings import settings
 from api.config.logging_config import setup_logging
-from api.infrastructure.clients.runpod_client import RunPodClientFactory
+# RunPod 클라이언트는 선택사항 (원격 Pod 사용 시)
+# from api.infrastructure.clients.runpod_client import RunPodClientFactory
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -26,26 +27,25 @@ logger = get_logger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """애플리케이션 생명주기 관리"""
-    # Startup: RunPod Pod 연결 확인
-    logger.info("Starting API Gateway...")
+    # Startup: 로컬 모델 초기화
+    logger.info("Starting API Gateway with local models...")
     
-    # RunPod 클라이언트 초기화 (필요시)
-    # 실제 Pod 연결은 첫 요청 시 lazy initialization
     try:
-        if settings.RUNPOD_LLM_ENDPOINT:
-            logger.info(f"LLM Pod endpoint: {settings.RUNPOD_LLM_ENDPOINT}")
-        if settings.RUNPOD_VLM_ENDPOINT:
-            logger.info(f"VLM Pod endpoint: {settings.RUNPOD_VLM_ENDPOINT}")
-        if settings.RUNPOD_DOCLING_ENDPOINT:
-            logger.info(f"Docling/Chandra Pod endpoint: {settings.RUNPOD_DOCLING_ENDPOINT}")
+        # 모델 설정 로그
+        logger.info(f"LLM Model: {settings.LLM_MODEL_NAME} on GPU {settings.LLM_GPU_ID}")
+        logger.info(f"VLM Model: {settings.VLM_MODEL_NAME} on GPU {settings.VLM_GPU_ID}")
+        logger.info(f"OCR Model: {settings.OCR_MODEL_NAME} on GPU {settings.OCR_GPU_ID}")
+        
+        # 모델은 첫 요청 시 lazy loading (메모리 절약)
+        logger.info("Models will be loaded on first request")
     except Exception as e:
-        logger.warning(f"Could not initialize RunPod clients: {str(e)}")
+        logger.warning(f"Could not initialize model settings: {str(e)}")
     
     yield
     
-    # Shutdown: 클라이언트 종료
+    # Shutdown: 모델 정리
     logger.info("Shutting down API Gateway...")
-    await RunPodClientFactory.close_all()
+    # 모델 언로드는 ModelLoader가 자동으로 처리
     logger.info("API Gateway stopped")
 
 

@@ -23,8 +23,9 @@ async def process_ocr(
     """
     OCR 엔드포인트 (Chandra 모델 사용)
     
-    Chandra OCR 모델을 사용하는 Pod (RTX 4090 #3)로 요청을 전달합니다.
-    Docling과 같은 Pod에 있지만 별도 엔드포인트로 호출됩니다.
+    Docling과 Chandra는 같은 서버(GPU 2)에 있지만 각각 독립적으로 호출됩니다.
+    - Docling: /v1/documents/process 엔드포인트로 별도 호출 (문서 처리)
+    - Chandra: 이 엔드포인트로 호출 (OCR 처리)
     
     - Chandra: Hugging Face OCR 모델 (https://huggingface.co/datalab-to/chandra)
     - 출력 형식: markdown, html, json

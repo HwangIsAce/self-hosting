@@ -17,10 +17,11 @@ async def process_document(
     service: DocumentService = Depends(get_document_service)
 ) -> DocumentProcessResponse:
     """
-    문서 처리 엔드포인트
+    문서 처리 엔드포인트 (Docling 엔진)
     
-    Docling 프레임워크를 사용하는 Pod (RTX 4090 #3)로 요청을 전달합니다.
-    Docling은 필요시 Chandra OCR 모델을 사용하여 문서를 처리합니다.
+    Docling과 Chandra는 같은 서버(GPU 2)에 있지만 각각 독립적으로 호출됩니다.
+    - Docling: 이 엔드포인트로 호출 (문서 처리: PDF, DOCX, TXT 등)
+    - Chandra: /v1/ocr 엔드포인트로 별도 호출 (OCR 처리)
     
     - Docling: 문서 처리 프레임워크 (https://docling-project.github.io/docling/)
     - Chandra: Hugging Face OCR 모델 (https://huggingface.co/datalab-to/chandra)

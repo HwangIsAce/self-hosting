@@ -3,24 +3,38 @@ from typing import Optional, List
 
 
 class Settings(BaseSettings):
-    """RunPod 배포를 위한 설정"""
+    """로컬 모델 실행을 위한 설정"""
     
     # API Gateway 서버 설정
     HOST: str = "0.0.0.0"
     PORT: int = 8000
     DEBUG: bool = False
     
-    # RunPod Pod 엔드포인트 (각 Pod의 고유 URL)
-    # Qwen LLM: Hugging Face 모델
+    # 모델 설정 (Hugging Face 모델 이름)
+    LLM_MODEL_NAME: str = "Qwen/Qwen2.5-7B-Instruct"
+    VLM_MODEL_NAME: str = "Qwen/Qwen2-VL-7B-Instruct"
+    OCR_MODEL_NAME: str = "datalab-to/chandra"
+    
+    # GPU 할당
+    LLM_GPU_ID: int = 0  # GPU 0: Qwen LLM
+    VLM_GPU_ID: int = 1  # GPU 1: Qwen VLM
+    OCR_GPU_ID: int = 2  # GPU 2: Docling + Chandra OCR
+    
+    # 모델 옵션
+    USE_QUANTIZATION: bool = False  # 양자화 사용 여부
+    LOAD_IN_8BIT: bool = False
+    LOAD_IN_4BIT: bool = False
+    
+    # 모델 캐시 디렉토리
+    MODEL_CACHE_DIR: str = "/root/.cache/huggingface"
+    
+    # RunPod Pod 엔드포인트 (선택사항 - 원격 Pod 사용 시)
+    # 로컬 모델 사용 시 비워두면 됨
     RUNPOD_LLM_ENDPOINT: str = ""
-    # Qwen VLM: Hugging Face 모델
     RUNPOD_VLM_ENDPOINT: str = ""
-    # Docling/Chandra: 같은 Pod에 있지만 각각 별도 엔드포인트로 호출
-    # - Docling: 문서 처리 프레임워크
-    # - Chandra: OCR 모델 (Hugging Face)
     RUNPOD_DOCLING_ENDPOINT: str = ""
     
-    # RunPod API 키 (선택사항, Pod 보호용)
+    # RunPod API 키 (선택사항)
     RUNPOD_API_KEY: Optional[str] = None
     
     # HTTP 클라이언트 설정
