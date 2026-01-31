@@ -113,19 +113,13 @@ class ModelLoader:
             )
             model_kwargs["quantization_config"] = quantization_config
         
-        # 모델 로드 (VLM 모델은 AutoModel로 자동 감지)
-        try:
-            # 먼저 AutoModelForCausalLM 시도 (일부 VLM 모델)
-            model = AutoModelForCausalLM.from_pretrained(
-                model_name,
-                **model_kwargs
-            )
-        except Exception:
-            # 실패 시 AutoModel 사용
-            model = AutoModel.from_pretrained(
-                model_name,
-                **model_kwargs
-            )
+        # 모델 로드 (VLM 모델은 Qwen2VLForConditionalGeneration 사용)
+        # Qwen2-VL 모델은 반드시 Qwen2VLForConditionalGeneration 사용해야 generate 메서드가 있음
+        from transformers import Qwen2VLForConditionalGeneration
+        model = Qwen2VLForConditionalGeneration.from_pretrained(
+            model_name,
+            **model_kwargs
+        )
         
         model.eval()
         
@@ -141,22 +135,43 @@ class ModelLoader:
         model_name: str,
         device_map: Optional[str] = None
     ):
-        """OCR 모델 로드"""
+        """OCR 모델 로드 (Chandra OCR)"""
         if model_name in self.loaded_models:
             logger.info(f"Model {model_name} already loaded, reusing")
             return self.loaded_models[model_name], self.loaded_processors.get(model_name)
         
         logger.info(f"Loading OCR model: {model_name}")
         
-        # OCR 모델은 일반적으로 Vision 모델이거나 특수 모델
-        # Chandra의 경우 AutoModelForVision2Seq 또는 AutoModelForImageClassification 사용 가능
+        # Chandra OCR은 Qwen3VLForConditionalGeneration 사용
+        # Hugging Face 문서: https://huggingface.co/datalab-to/chandra
+        # chandra.model.hf에서 Qwen3VLForConditionalGeneration 사용 확인
         try:
-            processor = AutoProcessor.from_pretrained(
+            from transformers import Qwen3VLForConditionalGeneration, Qwen3VLProcessor
+            
+            processor = Qwen3VLProcessor.from_pretrained(
                 model_name,
                 trust_remote_code=True
             )
-        except:
-            processor = None
+        except ImportError:
+            # Qwen3VLForConditionalGeneration이 없는 경우 AutoProcessor 사용
+            try:
+                processor = AutoProcessor.from_pretrained(
+                    model_name,
+                    trust_remote_code=True
+                )
+            except Exception as e:
+                logger.warning(f"Failed to load processor: {e}")
+                processor = None
+        except Exception as e:
+            logger.warning(f"Failed to load Qwen3VLProcessor: {e}")
+            try:
+                processor = AutoProcessor.from_pretrained(
+                    model_name,
+                    trust_remote_code=True
+                )
+            except Exception as e2:
+                logger.warning(f"Failed to load AutoProcessor: {e2}")
+                processor = None
         
         model_kwargs = {
             "trust_remote_code": True,
@@ -168,19 +183,42 @@ class ModelLoader:
         else:
             model_kwargs["device_map"] = "auto"
         
-        # OCR 모델 로드 (모델 타입에 따라 다를 수 있음)
+        # Chandra는 Qwen3VLForConditionalGeneration 사용 (chandra.model.hf 참조)
         try:
-            # 먼저 AutoModelForCausalLM 시도
-            model = AutoModelForCausalLM.from_pretrained(
+            from transformers import Qwen3VLForConditionalGeneration
+            model = Qwen3VLForConditionalGeneration.from_pretrained(
                 model_name,
                 **model_kwargs
             )
-        except Exception:
-            # 실패 시 AutoModel 사용
-            model = AutoModel.from_pretrained(
-                model_name,
-                **model_kwargs
-            )
+        except ImportError:
+            # Qwen3VLForConditionalGeneration이 없는 경우 AutoModelForCausalLM 시도
+            try:
+                model = AutoModelForCausalLM.from_pretrained(
+                    model_name,
+                    **model_kwargs
+                )
+            except Exception:
+                # 실패 시 AutoModel 사용
+                model = AutoModel.from_pretrained(
+                    model_name,
+                    **model_kwargs
+                )
+        except Exception as e:
+            logger.warning(f"Failed to load Qwen3VLForConditionalGeneration: {e}, trying AutoModelForCausalLM")
+            try:
+                model = AutoModelForCausalLM.from_pretrained(
+                    model_name,
+                    **model_kwargs
+                )
+            except Exception:
+                model = AutoModel.from_pretrained(
+                    model_name,
+                    **model_kwargs
+                )
+        
+        # processor를 model에 할당 (chandra 패키지 사용 시 필요)
+        if processor:
+            model.processor = processor
         
         model.eval()
         

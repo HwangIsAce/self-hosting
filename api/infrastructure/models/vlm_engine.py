@@ -11,6 +11,16 @@ import asyncio
 from api.infrastructure.models.model_loader import ModelLoader
 from api.config.logging_config import get_logger
 
+# qwen-vl-utils 사용 (선택사항이지만 권장)
+try:
+    from qwen_vl_utils import process_vision_info
+    HAS_QWEN_VL_UTILS = True
+except ImportError:
+    HAS_QWEN_VL_UTILS = False
+    # logger는 아직 초기화되지 않았으므로 print 사용
+    import warnings
+    warnings.warn("qwen-vl-utils not installed. Install with: pip install qwen-vl-utils")
+
 logger = get_logger(__name__)
 
 
@@ -57,59 +67,107 @@ class VLMEngine:
         if not self._loaded:
             self.load_model()
         
-        # 이미지 추출 및 처리
-        images = []
-        text_parts = []
-        
+        # Qwen2-VL 형식의 메시지로 변환
+        # OpenAI 형식에서 Qwen2-VL 형식으로 변환
+        qwen_messages = []
         for msg in messages:
+            role = msg.get("role", "user")
             content = msg.get("content", "")
             image_url = msg.get("image_url")
             image_base64 = msg.get("image_base64")
             
+            qwen_content = []
+            
+            # 이미지 처리
             if image_url:
-                # URL에서 이미지 다운로드
-                image = await self._download_image(image_url)
-                if image:
-                    images.append(image)
-                    text_parts.append(content)
+                # URL 형식: http:// 또는 https://
+                if HAS_QWEN_VL_UTILS:
+                    qwen_content.append({"type": "image", "image": image_url})
+                else:
+                    # qwen-vl-utils가 없으면 다운로드 후 base64로 변환
+                    image = await self._download_image(image_url)
+                    if image:
+                        buffer = BytesIO()
+                        image.save(buffer, format='PNG')
+                        image_base64 = base64.b64encode(buffer.getvalue()).decode()
+                        qwen_content.append({"type": "image", "image": f"data:image/png;base64,{image_base64}"})
             elif image_base64:
-                # Base64에서 이미지 디코딩
-                image = await self._decode_base64_image(image_base64)
-                if image:
-                    images.append(image)
-                    text_parts.append(content)
-            else:
-                text_parts.append(content)
+                # Base64 형식
+                if not image_base64.startswith("data:"):
+                    image_base64 = f"data:image/png;base64,{image_base64}"
+                qwen_content.append({"type": "image", "image": image_base64})
+            
+            # 텍스트 추가
+            if content:
+                qwen_content.append({"type": "text", "text": content})
+            
+            if qwen_content:
+                qwen_messages.append({
+                    "role": role,
+                    "content": qwen_content
+                })
         
-        # 텍스트 결합
-        text = " ".join(text_parts)
+        # qwen-vl-utils를 사용하여 메시지 처리 (권장)
+        if HAS_QWEN_VL_UTILS:
+            loop = asyncio.get_event_loop()
+            processed_messages = await loop.run_in_executor(
+                None,
+                lambda: process_vision_info(qwen_messages)
+            )
+        else:
+            processed_messages = qwen_messages
         
         # 프로세서로 입력 준비
-        if images:
+        # Qwen2-VL은 apply_chat_template을 사용
+        text = self.processor.apply_chat_template(
+            processed_messages,
+            tokenize=False,
+            add_generation_prompt=True
+        )
+        
+        # 이미지 추출
+        image_inputs = []
+        for msg in processed_messages:
+            content = msg.get("content", [])
+            if isinstance(content, list):
+                for item in content:
+                    if isinstance(item, dict) and item.get("type") == "image":
+                        image_path = item.get("image", "")
+                        if image_path.startswith("data:"):
+                            # Base64 이미지 디코딩
+                            image = await self._decode_base64_image(image_path)
+                            if image:
+                                image_inputs.append(image)
+                        elif image_path.startswith("http://") or image_path.startswith("https://"):
+                            # URL 이미지 다운로드
+                            image = await self._download_image(image_path)
+                            if image:
+                                image_inputs.append(image)
+                        elif image_path.startswith("file://"):
+                            # 로컬 파일 (현재는 지원하지 않음)
+                            logger.warning(f"Local file path not supported: {image_path}")
+        
+        # 프로세서로 입력 준비
+        if image_inputs:
             inputs = self.processor(
                 text=text,
-                images=images,
-                return_tensors="pt",
-                padding=True
+                images=image_inputs,
+                padding=True,
+                return_tensors="pt"
             )
-            # device로 이동
-            if isinstance(inputs, dict):
-                inputs = {k: v.to(self.model.device) if isinstance(v, torch.Tensor) else v 
-                         for k, v in inputs.items()}
-            else:
-                inputs = inputs.to(self.model.device)
         else:
-            # 이미지가 없는 경우 텍스트만
             inputs = self.processor(
                 text=text,
-                return_tensors="pt",
-                padding=True
+                padding=True,
+                return_tensors="pt"
             )
-            if isinstance(inputs, dict):
-                inputs = {k: v.to(self.model.device) if isinstance(v, torch.Tensor) else v 
-                         for k, v in inputs.items()}
-            else:
-                inputs = inputs.to(self.model.device)
+        
+        # device로 이동
+        if isinstance(inputs, dict):
+            inputs = {k: v.to(self.model.device) if isinstance(v, torch.Tensor) else v 
+                     for k, v in inputs.items()}
+        else:
+            inputs = inputs.to(self.model.device)
         
         # 생성 파라미터
         generation_config = {
@@ -130,26 +188,20 @@ class VLMEngine:
                 )
             )
         
-        # 디코딩
-        if hasattr(self.processor, "decode"):
-            generated_text = self.processor.decode(
-                outputs[0],
-                skip_special_tokens=True
-            )
-        else:
-            # 프로세서에 decode가 없는 경우 토크나이저 사용
-            if hasattr(self.processor, "tokenizer"):
-                generated_text = self.processor.tokenizer.decode(
-                    outputs[0],
-                    skip_special_tokens=True
-                )
-            else:
-                # 기본 디코딩
-                generated_text = str(outputs[0])
+        # 디코딩 - 입력 길이만큼 제거
+        input_ids = inputs["input_ids"]
+        generated_ids = outputs[0][input_ids.shape[1]:]
         
-        # 토큰 사용량 계산 (대략적)
-        prompt_tokens = inputs["input_ids"].shape[1] if "input_ids" in inputs else 0
-        completion_tokens = len(outputs[0])
+        # 프로세서로 디코딩
+        generated_text = self.processor.decode(
+            generated_ids,
+            skip_special_tokens=True,
+            clean_up_tokenization_spaces=False
+        )
+        
+        # 토큰 사용량 계산
+        prompt_tokens = input_ids.shape[1]
+        completion_tokens = len(generated_ids)
         total_tokens = prompt_tokens + completion_tokens
         
         return {
