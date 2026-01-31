@@ -66,34 +66,41 @@ class RunPodClient(IRunPodClient):
         
         logger.info(f"RunPodClient initialized for {self.base_url}")
     
-    @retry(
-        stop=stop_after_attempt(settings.MAX_RETRIES),
-        wait=wait_exponential(multiplier=1, min=settings.RETRY_DELAY, max=10)
-    )
     async def post(self, endpoint: str, json: Dict[str, Any]) -> Dict[str, Any]:
         """POST 요청 (재시도 로직 포함)"""
-        try:
-            logger.debug(f"POST {endpoint} to {self.base_url}")
-            response = await self.client.post(endpoint, json=json)
-            response.raise_for_status()
-            return response.json()
-        except httpx.TimeoutException as e:
-            logger.error(f"Request timeout: {str(e)}")
-            raise RunPodTimeoutError(f"Request timeout: {str(e)}")
-        except httpx.ConnectError as e:
-            logger.error(f"Connection error: {str(e)}")
-            raise RunPodConnectionError(f"Connection error: {str(e)}")
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 401:
-                logger.error("Authentication failed")
-                raise RunPodAuthenticationError(f"Authentication failed: {e.response.text}")
-            logger.error(f"HTTP error {e.response.status_code}: {e.response.text}")
-            raise RunPodServiceError(
-                f"HTTP error {e.response.status_code}: {e.response.text}"
-            )
-        except Exception as e:
-            logger.error(f"Unexpected error: {str(e)}")
-            raise RunPodServiceError(f"Unexpected error: {str(e)}")
+        # 런타임에 settings를 읽어서 retry 데코레이터를 동적으로 적용
+        from api.config.settings import settings as runtime_settings
+        retry_decorator = retry(
+            stop=stop_after_attempt(runtime_settings.MAX_RETRIES),
+            wait=wait_exponential(multiplier=1, min=runtime_settings.RETRY_DELAY, max=10)
+        )
+        
+        @retry_decorator
+        async def _post_with_retry(endpoint: str, json: Dict[str, Any]) -> Dict[str, Any]:
+            try:
+                logger.debug(f"POST {endpoint} to {self.base_url}")
+                response = await self.client.post(endpoint, json=json)
+                response.raise_for_status()
+                return response.json()
+            except httpx.TimeoutException as e:
+                logger.error(f"Request timeout: {str(e)}")
+                raise RunPodTimeoutError(f"Request timeout: {str(e)}")
+            except httpx.ConnectError as e:
+                logger.error(f"Connection error: {str(e)}")
+                raise RunPodConnectionError(f"Connection error: {str(e)}")
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 401:
+                    logger.error("Authentication failed")
+                    raise RunPodAuthenticationError(f"Authentication failed: {e.response.text}")
+                logger.error(f"HTTP error {e.response.status_code}: {e.response.text}")
+                raise RunPodServiceError(
+                    f"HTTP error {e.response.status_code}: {e.response.text}"
+                )
+            except Exception as e:
+                logger.error(f"Unexpected error: {str(e)}")
+                raise RunPodServiceError(f"Unexpected error: {str(e)}")
+        
+        return await _post_with_retry(endpoint, json)
     
     async def get(self, endpoint: str) -> Dict[str, Any]:
         """GET 요청"""
