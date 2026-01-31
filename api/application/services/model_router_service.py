@@ -75,7 +75,7 @@ class ModelRouterService:
     ) -> Dict[str, Any]:
         """OpenAI 요청 형식을 RunPod Pod 형식으로 변환"""
         payload = {
-            "messages": [msg.dict(exclude_none=True) for msg in request.messages],
+            "messages": [msg.model_dump(exclude_none=True) for msg in request.messages],
             "temperature": request.temperature,
             "max_tokens": request.max_tokens,
             "top_p": request.top_p,
@@ -142,6 +142,27 @@ class ModelRouterService:
         if options:
             payload["options"] = options
         
-        logger.info(f"Routing document processing to docling pod")
+        logger.info("Routing document processing to Docling framework pod")
         
         return await client.post("/v1/process", json=payload)
+    
+    async def route_ocr_processing(
+        self,
+        image_base64: str,
+        prompt_type: Optional[str] = "ocr_layout",
+        output_format: Optional[str] = "markdown"
+    ) -> Dict[str, Any]:
+        """OCR 처리 요청을 Chandra 모델로 라우팅 (같은 Pod이지만 다른 엔드포인트)"""
+        # Docling과 Chandra는 같은 Pod에 있으므로 같은 클라이언트 사용
+        client = self._get_client("docling")
+        
+        payload = {
+            "image_base64": image_base64,
+            "prompt_type": prompt_type,
+            "output_format": output_format,
+        }
+        
+        logger.info("Routing OCR processing to Chandra model (same pod as Docling)")
+        
+        # Chandra는 별도 엔드포인트로 호출 (예: /v1/ocr 또는 /chandra/ocr)
+        return await client.post("/v1/ocr", json=payload)

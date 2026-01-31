@@ -7,9 +7,11 @@ Self-Hosting API Gateway를 배포하는 방법을 안내합니다.
 ### 필수 요구사항
 
 1. **RunPod Pods**: 다음 3개의 RunPod Pod가 실행 중이어야 합니다
-   - Qwen LLM Pod (RTX 4090)
-   - Qwen VLM Pod (RTX 4090)
-   - Docling/Chandra Pod (RTX 4090)
+   - **Qwen LLM Pod** (RTX 4090): Hugging Face에서 Qwen LLM 모델 다운로드하여 사용
+   - **Qwen VLM Pod** (RTX 4090): Hugging Face에서 Qwen VLM 모델 다운로드하여 사용
+   - **Docling Pod** (RTX 4090): Docling 프레임워크 배포 (필요시 Chandra OCR 모델 사용)
+     - Docling: [문서 처리 프레임워크](https://docling-project.github.io/docling/)
+     - Chandra: [Hugging Face OCR 모델](https://huggingface.co/datalab-to/chandra)
 
 2. **RunPod Pod 엔드포인트**: 각 Pod의 고유 URL
    - 예시: `https://xxx-llm-1234.runpod.net`
@@ -28,8 +30,13 @@ Self-Hosting API Gateway를 배포하는 방법을 안내합니다.
 
 ```bash
 # RunPod Pod 엔드포인트
+# Qwen LLM: Hugging Face 모델을 다운로드하여 Pod에 배포
 RUNPOD_LLM_ENDPOINT=https://your-llm-pod.runpod.net
+
+# Qwen VLM: Hugging Face 모델을 다운로드하여 Pod에 배포
 RUNPOD_VLM_ENDPOINT=https://your-vlm-pod.runpod.net
+
+# Docling: Docling 프레임워크를 Pod에 배포 (필요시 Chandra OCR 모델 사용)
 RUNPOD_DOCLING_ENDPOINT=https://your-docling-pod.runpod.net
 
 # RunPod API 키 (선택사항)

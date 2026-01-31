@@ -1,18 +1,26 @@
 # Self-Hosting API
 
-OpenAI-compatible API Gateway for Qwen LLM, VLM, and Docling/Chandra services running on RunPod RTX 4090 GPUs.
+OpenAI-compatible API Gateway for Qwen LLM, Qwen VLM, and Docling (with Chandra OCR) services running on RunPod RTX 4090 GPUs.
+
+## 기술 스택
+
+- **Qwen LLM**: Hugging Face 모델 (텍스트 생성)
+- **Qwen VLM**: Hugging Face 모델 (이미지-텍스트 멀티모달)
+- **Docling**: 문서 처리 프레임워크 (PDF, DOCX, 이미지 등)
+- **Chandra**: Hugging Face OCR 모델 ([datalab-to/chandra](https://huggingface.co/datalab-to/chandra)) - Docling에서 사용
 
 ## 📚 문서
 
 - [배포 가이드 (Deployment Guide)](./DEPLOYMENT.md) - 상세한 배포 및 설정 방법
+- [프로덕션 준비 체크리스트 (Production Checklist)](./PRODUCTION_CHECKLIST.md) - 프로덕션 배포 전 확인 사항
 
 ## 🏗️ 아키텍처
 
 ```
 Client → API Gateway (FastAPI) → RunPod Pods
-                                ├── RTX 4090 #1: Qwen LLM
-                                ├── RTX 4090 #2: Qwen VLM
-                                └── RTX 4090 #3: Docling/Chandra
+                                ├── RTX 4090 #1: Qwen LLM (Hugging Face)
+                                ├── RTX 4090 #2: Qwen VLM (Hugging Face)
+                                └── RTX 4090 #3: Docling Framework (with Chandra OCR)
 ```
 
 ## 🎯 사용 방법
@@ -93,11 +101,23 @@ curl -X POST http://localhost:8000/v1/chat/completions \
   }'
 ```
 
-#### 4. 문서 처리 (Docling)
+#### 4. 문서 처리 (Docling Framework)
+
+Docling 프레임워크를 사용하여 문서를 처리합니다.
 
 ```bash
 curl -X POST http://localhost:8000/v1/documents/process \
   -F "file=@document.pdf"
+```
+
+#### 5. OCR 처리 (Chandra 모델)
+
+Chandra OCR 모델을 사용하여 이미지에서 텍스트를 추출합니다. Docling과 같은 Pod에 있지만 별도 엔드포인트로 호출됩니다.
+
+```bash
+curl -X POST http://localhost:8000/v1/ocr \
+  -F "image=@image.png" \
+  -F "output_format=markdown"
 ```
 
 ### Python 클라이언트 사용

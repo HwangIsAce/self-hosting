@@ -171,7 +171,7 @@ class RunPodClientFactory:
     
     @classmethod
     def get_docling_client(cls) -> RunPodClient:
-        """Docling Pod 클라이언트 (싱글톤)"""
+        """Docling 프레임워크 Pod 클라이언트 (싱글톤)"""
         if cls._docling_client is None:
             if not settings.RUNPOD_DOCLING_ENDPOINT:
                 raise ValueError("RUNPOD_DOCLING_ENDPOINT is not set")

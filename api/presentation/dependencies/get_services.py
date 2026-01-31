@@ -3,6 +3,7 @@ from typing import Optional
 
 from api.application.services.chat_service import ChatService
 from api.application.services.document_service import DocumentService
+from api.application.services.ocr_service import OCRService
 from api.application.services.model_router_service import ModelRouterService
 from api.infrastructure.adapters.cache_adapter import CacheAdapter, ICacheAdapter
 from api.config.settings import settings
@@ -29,5 +30,12 @@ def get_chat_service() -> ChatService:
 def get_document_service() -> DocumentService:
     """Document Service 생성"""
     return DocumentService(
+        model_router=get_model_router_service()
+    )
+
+
+def get_ocr_service() -> OCRService:
+    """OCR Service 생성"""
+    return OCRService(
         model_router=get_model_router_service()
     )

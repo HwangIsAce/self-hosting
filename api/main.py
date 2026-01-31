@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import uvicorn
 
-from api.presentation.routers import chat, completions, documents, models
+from api.presentation.routers import chat, completions, documents, models, ocr
 from api.presentation.middleware.error_handler import (
     validation_exception_handler,
     http_exception_handler,
@@ -37,7 +37,7 @@ async def lifespan(app: FastAPI):
         if settings.RUNPOD_VLM_ENDPOINT:
             logger.info(f"VLM Pod endpoint: {settings.RUNPOD_VLM_ENDPOINT}")
         if settings.RUNPOD_DOCLING_ENDPOINT:
-            logger.info(f"Docling Pod endpoint: {settings.RUNPOD_DOCLING_ENDPOINT}")
+            logger.info(f"Docling/Chandra Pod endpoint: {settings.RUNPOD_DOCLING_ENDPOINT}")
     except Exception as e:
         logger.warning(f"Could not initialize RunPod clients: {str(e)}")
     
@@ -51,7 +51,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Self-Hosting API",
-    description="OpenAI-compatible API for Qwen LLM, VLM, and Docling on RunPod RTX 4090",
+    description="OpenAI-compatible API for Qwen LLM (HF), Qwen VLM (HF), and Docling Framework on RunPod RTX 4090",
     version="1.0.0",
     lifespan=lifespan
 )
@@ -77,6 +77,7 @@ app.add_exception_handler(Exception, general_exception_handler)
 app.include_router(chat.router, prefix="/v1", tags=["Chat"])
 app.include_router(completions.router, prefix="/v1", tags=["Completions"])
 app.include_router(documents.router, prefix="/v1", tags=["Documents"])
+app.include_router(ocr.router, prefix="/v1", tags=["OCR"])
 app.include_router(models.router, prefix="/v1", tags=["Models"])
 
 
@@ -91,6 +92,7 @@ async def root():
             "chat": "/v1/chat/completions",
             "completions": "/v1/completions",
             "documents": "/v1/documents/process",
+            "ocr": "/v1/ocr",
             "models": "/v1/models"
         }
     }

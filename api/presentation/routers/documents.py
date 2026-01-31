@@ -19,9 +19,13 @@ async def process_document(
     """
     문서 처리 엔드포인트
     
-    Docling/Chandra Pod (RTX 4090 #3)로 요청을 전달합니다.
+    Docling 프레임워크를 사용하는 Pod (RTX 4090 #3)로 요청을 전달합니다.
+    Docling은 필요시 Chandra OCR 모델을 사용하여 문서를 처리합니다.
     
-    지원 파일 형식: PDF, DOCX, TXT 등
+    - Docling: 문서 처리 프레임워크 (https://docling-project.github.io/docling/)
+    - Chandra: Hugging Face OCR 모델 (https://huggingface.co/datalab-to/chandra)
+    
+    지원 파일 형식: PDF, DOCX, TXT, 이미지 등
     """
     try:
         logger.info(f"Document processing request: filename={file.filename}, content_type={file.content_type}")

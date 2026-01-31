@@ -40,7 +40,7 @@ class ChatService:
         # 캐싱 저장 (스트리밍이 아닌 경우만)
         if self.cache and not request.stream:
             cache_key = self._generate_cache_key(request)
-            await self.cache.set(cache_key, response.dict(), ttl=3600)
+            await self.cache.set(cache_key, response.model_dump(), ttl=3600)
             logger.debug(f"Cached response for key: {cache_key}")
         
         return response
@@ -48,7 +48,7 @@ class ChatService:
     def _generate_cache_key(self, request: ChatCompletionRequest) -> str:
         """캐시 키 생성"""
         key_data = json.dumps(
-            request.dict(exclude={"user", "n"} if request.n == 1 else {"user"}),
+            request.model_dump(exclude={"user", "n"} if request.n == 1 else {"user"}),
             sort_keys=True,
             default=str
         )

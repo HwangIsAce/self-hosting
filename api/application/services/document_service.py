@@ -34,7 +34,7 @@ class DocumentService:
             # TODO: URL에서 파일 다운로드 및 base64 변환
             raise NotImplementedError("file_url processing not yet implemented")
         
-        # Docling Pod로 라우팅
+        # Docling 프레임워크 Pod로 라우팅 (필요시 Chandra OCR 사용)
         result = await self.model_router.route_document_processing(
             file_base64=file_base64,
             file_type=file_type,

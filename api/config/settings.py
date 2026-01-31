@@ -11,8 +11,13 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     
     # RunPod Pod 엔드포인트 (각 Pod의 고유 URL)
+    # Qwen LLM: Hugging Face 모델
     RUNPOD_LLM_ENDPOINT: str = ""
+    # Qwen VLM: Hugging Face 모델
     RUNPOD_VLM_ENDPOINT: str = ""
+    # Docling/Chandra: 같은 Pod에 있지만 각각 별도 엔드포인트로 호출
+    # - Docling: 문서 처리 프레임워크
+    # - Chandra: OCR 모델 (Hugging Face)
     RUNPOD_DOCLING_ENDPOINT: str = ""
     
     # RunPod API 키 (선택사항, Pod 보호용)
