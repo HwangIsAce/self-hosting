@@ -40,7 +40,13 @@ class OCREngine:
         device_map: Optional[str] = None
     ):
         self.model_name = model_name
-        self.device_map = device_map or "cuda:2"
+        # GPU 2 사용 (설정에 따라 OCR_GPU_ID=2)
+        # settings에서 OCR_GPU_ID를 읽어와서 사용
+        from api.config.settings import settings
+        self.device_map = device_map or f"cuda:{settings.OCR_GPU_ID}"
+        
+        # device_map을 클래스 변수에 저장 (모델 로드 시 사용)
+        OCREngine._device_map = self.device_map
         
         # 모델 초기화 (최초 1회만)
         if HAS_CHANDRA_PACKAGE:
@@ -64,17 +70,36 @@ class OCREngine:
             from transformers import AutoProcessor
             from chandra.output import parse_markdown
             
+            # device_map을 사용하여 특정 GPU에 로드
+            # 클래스 변수로 device_map 저장 (나중에 사용)
+            if not hasattr(cls, '_device_map'):
+                # 기본값은 cuda:2 (OCR_GPU_ID)
+                cls._device_map = "cuda:2"
+            
             # Qwen3VLForConditionalGeneration 사용 (generate 메서드 필요)
             try:
                 from transformers import Qwen3VLForConditionalGeneration
-                cls._model = Qwen3VLForConditionalGeneration.from_pretrained("datalab-to/chandra").cuda()
+                # device_map을 사용하여 특정 GPU에 로드
+                cls._model = Qwen3VLForConditionalGeneration.from_pretrained(
+                    "datalab-to/chandra",
+                    device_map=cls._device_map,
+                    torch_dtype=torch.float16  # 메모리 절약을 위해 float16 사용
+                )
             except ImportError:
                 # Qwen3VLForConditionalGeneration이 없으면 AutoModelForCausalLM 시도
                 from transformers import AutoModelForCausalLM
-                cls._model = AutoModelForCausalLM.from_pretrained("datalab-to/chandra").cuda()
+                cls._model = AutoModelForCausalLM.from_pretrained(
+                    "datalab-to/chandra",
+                    device_map=cls._device_map,
+                    torch_dtype=torch.float16
+                )
             
             cls._processor = AutoProcessor.from_pretrained("datalab-to/chandra")
             cls._model.processor = cls._processor
+            
+            # processor의 device 설정 (모델과 같은 device)
+            if hasattr(cls._processor, 'device'):
+                cls._processor.device = torch.device(cls._device_map)
             
             # parse_markdown 함수 저장
             cls._parse_markdown = parse_markdown
@@ -105,12 +130,71 @@ class OCREngine:
                 # 1. BatchInputItem 생성
                 batch = [BatchInputItem(image=image, prompt_type=prompt_type)]
                 
-                # 2. generate_hf로 생성 (핵심 호출!)
+                # 2. generate_hf 내부 로직을 직접 구현하여 device를 올바르게 설정
                 def generate_ocr():
-                    from chandra.model.hf import generate_hf
-                    return generate_hf(batch, OCREngine._model)[0]
-                    # generate_hf()가 GPU에서 OCR 수행
-                    # result.raw에 원시 결과가 들어있음
+                    from chandra.model.hf import process_batch_element
+                    from chandra.model.schema import GenerationResult
+                    from qwen_vl_utils import process_vision_info
+                    import torch
+                    
+                    # 모델과 processor 가져오기
+                    model = OCREngine._model
+                    processor = OCREngine._processor
+                    model_device = next(model.parameters()).device
+                    
+                    # process_batch_element로 메시지 생성
+                    messages = [process_batch_element(item, processor) for item in batch]
+                    text = processor.apply_chat_template(
+                        messages, tokenize=False, add_generation_prompt=True
+                    )
+                    
+                    # vision 정보 처리 (chandra의 generate_hf와 동일하게 2개만 받음)
+                    image_inputs, _ = process_vision_info(messages)
+                    
+                    # processor로 입력 준비
+                    inputs = processor(
+                        text=text,
+                        images=image_inputs,
+                        padding=True,
+                        return_tensors="pt",
+                        padding_side="left",
+                    )
+                    
+                    # 모든 텐서를 올바른 device로 이동
+                    inputs = {k: v.to(model_device) if isinstance(v, torch.Tensor) else v 
+                             for k, v in inputs.items()}
+                    
+                    # 생성 (기본 max_output_tokens는 2048로 설정)
+                    max_output_tokens = 2048
+                    # generation config 설정 (Qwen3VL에 맞게)
+                    generated_ids = model.generate(
+                        **inputs,
+                        max_new_tokens=max_output_tokens,
+                        do_sample=False,  # greedy decoding
+                    )
+                    
+                    # 출력 처리
+                    generated_ids_trimmed = [
+                        out_ids[len(in_ids):]
+                        for in_ids, out_ids in zip(inputs["input_ids"], generated_ids)
+                    ]
+                    output_text = processor.batch_decode(
+                        generated_ids_trimmed,
+                        skip_special_tokens=True,
+                        clean_up_tokenization_spaces=False
+                    )
+                    
+                    # GenerationResult 생성
+                    if not output_text or not output_text[0]:
+                        raise ValueError("Empty output from model generation")
+                    
+                    result = GenerationResult(
+                        raw=output_text[0], 
+                        token_count=len(generated_ids_trimmed[0]), 
+                        error=False
+                    )
+                    
+                    return result
                 
                 # 비동기로 실행
                 loop = asyncio.get_event_loop()
@@ -133,8 +217,17 @@ class OCREngine:
             except Exception as e:
                 logger.error(f"Chandra OCR processing failed: {e}")
                 import traceback
-                logger.error(traceback.format_exc())
-                text = await self._process_manual(image, prompt_type, output_format)
+                error_trace = traceback.format_exc()
+                logger.error(error_trace)
+                # CUDA 에러인 경우 더 명확한 메시지
+                if "CUDA" in str(e) or "cuda" in str(e).lower():
+                    raise RuntimeError(
+                        f"CUDA error during OCR processing: {str(e)}. "
+                        f"Model device: {next(OCREngine._model.parameters()).device if OCREngine._model else 'unknown'}. "
+                        f"Please check GPU memory and device allocation."
+                    )
+                # 다른 에러는 그대로 전파
+                raise
         else:
             # 수동 처리 (fallback)
             text = await self._process_manual(image, prompt_type, output_format)
