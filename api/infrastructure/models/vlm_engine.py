@@ -107,6 +107,10 @@ class VLMEngine:
                     "content": qwen_content
                 })
         
+        # 메시지가 비어있는지 확인
+        if not qwen_messages:
+            raise ValueError("No valid messages provided. VLM models require at least one message with text or image content.")
+        
         # qwen-vl-utils를 사용하여 메시지 처리 (권장)
         if HAS_QWEN_VL_UTILS:
             loop = asyncio.get_event_loop()
@@ -117,37 +121,120 @@ class VLMEngine:
         else:
             processed_messages = qwen_messages
         
+        # processed_messages가 None이거나 빈 리스트인지 확인
+        if not processed_messages:
+            raise ValueError("Failed to process messages. processed_messages is empty or None.")
+        
         # 프로세서로 입력 준비
         # Qwen2-VL은 apply_chat_template을 사용
-        text = self.processor.apply_chat_template(
-            processed_messages,
-            tokenize=False,
-            add_generation_prompt=True
-        )
+        # processor가 None인지 확인
+        if self.processor is None:
+            raise ValueError("Processor is not initialized. Model may not be loaded correctly.")
+        
+        # tokenizer의 special_tokens_map이 None일 수 있으므로 안전하게 처리
+        # processor에 tokenizer 속성이 있고, special_tokens_map을 확인
+        if hasattr(self.processor, 'tokenizer') and self.processor.tokenizer is not None:
+            # special_tokens_map이 None이면 빈 dict로 설정
+            if not hasattr(self.processor.tokenizer, 'special_tokens_map') or self.processor.tokenizer.special_tokens_map is None:
+                self.processor.tokenizer.special_tokens_map = {}
+            # special_tokens_map이 속성으로 존재하지 않으면 동적으로 추가
+            elif not hasattr(self.processor.tokenizer, 'special_tokens_map'):
+                setattr(self.processor.tokenizer, 'special_tokens_map', {})
+        
+        # apply_chat_template 시도
+        text = None
+        try:
+            text = self.processor.apply_chat_template(
+                processed_messages,
+                tokenize=False,
+                add_generation_prompt=True
+            )
+        except (TypeError, AttributeError, ValueError) as e:
+            # special_tokens_map이 None인 경우 대체 처리
+            logger.warning(f"apply_chat_template failed: {e}. Trying alternative approach.")
+            # 원본 qwen_messages에서 텍스트 추출 (processed_messages 구조가 다를 수 있음)
+            text_parts = []
+            for msg in qwen_messages:
+                if isinstance(msg, dict):
+                    content = msg.get("content", [])
+                    if isinstance(content, list):
+                        for item in content:
+                            if isinstance(item, dict) and item.get("type") == "text":
+                                text_parts.append(item.get("text", ""))
+                    elif isinstance(content, str):
+                        text_parts.append(content)
+            
+            # processed_messages에서도 시도
+            if not text_parts:
+                for msg in processed_messages:
+                    if msg is None:
+                        continue
+                    # msg가 list인 경우와 dict인 경우 모두 처리
+                    if isinstance(msg, list):
+                        for item in msg:
+                            if isinstance(item, dict) and item.get("type") == "text":
+                                text_parts.append(item.get("text", ""))
+                    elif isinstance(msg, dict):
+                        content = msg.get("content", [])
+                        if isinstance(content, list):
+                            for item in content:
+                                if isinstance(item, dict) and item.get("type") == "text":
+                                    text_parts.append(item.get("text", ""))
+                        elif isinstance(content, str):
+                            text_parts.append(content)
+            
+            if text_parts:
+                # 간단한 포맷팅으로 텍스트 구성
+                text = "\n".join(text_parts)
+                # VLM 모델을 위한 프롬프트 추가
+                if text and not text.endswith("\n"):
+                    text += "\n"
+            else:
+                raise ValueError("No text content found in messages after processing.")
+        
+        if not text:
+            raise ValueError("Failed to generate text from messages.")
         
         # 이미지 추출
         image_inputs = []
         for msg in processed_messages:
             if msg is None:
                 continue
-            content = msg.get("content", [])
-            if isinstance(content, list):
-                for item in content:
+            
+            # msg가 list인 경우와 dict인 경우 모두 처리
+            if isinstance(msg, list):
+                # list인 경우 직접 처리
+                for item in msg:
                     if isinstance(item, dict) and item.get("type") == "image":
                         image_path = item.get("image", "")
                         if image_path.startswith("data:"):
-                            # Base64 이미지 디코딩
                             image = await self._decode_base64_image(image_path)
                             if image:
                                 image_inputs.append(image)
                         elif image_path.startswith("http://") or image_path.startswith("https://"):
-                            # URL 이미지 다운로드
                             image = await self._download_image(image_path)
                             if image:
                                 image_inputs.append(image)
-                        elif image_path.startswith("file://"):
-                            # 로컬 파일 (현재는 지원하지 않음)
-                            logger.warning(f"Local file path not supported: {image_path}")
+            elif isinstance(msg, dict):
+                # dict인 경우 기존 로직 사용
+                content = msg.get("content", [])
+                if isinstance(content, list):
+                    for item in content:
+                        if isinstance(item, dict) and item.get("type") == "image":
+                            image_path = item.get("image", "")
+                            if image_path.startswith("data:"):
+                                # Base64 이미지 디코딩
+                                image = await self._decode_base64_image(image_path)
+                                if image:
+                                    image_inputs.append(image)
+                            elif image_path.startswith("http://") or image_path.startswith("https://"):
+                                # URL 이미지 다운로드
+                                image = await self._download_image(image_path)
+                                if image:
+                                    image_inputs.append(image)
+                            elif image_path.startswith("file://"):
+                                # 로컬 파일 (현재는 지원하지 않음)
+                                logger.warning(f"Local file path not supported: {image_path}")
         
         # 프로세서로 입력 준비
         if image_inputs:
