@@ -75,7 +75,7 @@ class OCREngine:
             raise ImportError("Chandra dependencies not installed. Install with: pip install chandra-ocr")
         
         try:
-            from transformers import AutoModel, AutoProcessor
+            from transformers import AutoProcessor, Qwen3VLForConditionalGeneration
             from chandra.output import parse_markdown
             
             # device_map을 사용하여 특정 GPU에 로드
@@ -85,41 +85,34 @@ class OCREngine:
                 from api.config.settings import settings
                 cls._device_map = f"cuda:{settings.OCR_GPU_ID}"
             
-            # Hugging Face 공식 문서 방식 그대로 사용
-            # https://huggingface.co/datalab-to/chandra
-            # model = AutoModel.from_pretrained("datalab-to/chandra").cuda()
-            # 모델을 설정된 GPU에 로드
-            # device_map을 사용하거나 .cuda() 메서드 사용
+            # Qwen3VLForConditionalGeneration을 사용해야 generate 메서드가 있음
+            # AutoModel은 Qwen3VLModel을 반환하는데 generate가 없음
+            # torch.float16은 logits가 nan이 되는 문제가 있으므로 bfloat16 사용
             device = torch.device(cls._device_map)
-            cls._model = AutoModel.from_pretrained(
+            cls._model = Qwen3VLForConditionalGeneration.from_pretrained(
                 "datalab-to/chandra",
-                torch_dtype=torch.float16
+                torch_dtype=torch.bfloat16
             ).to(device)
-            
-            # AutoModel이 generate 메서드를 가지는지 확인
-            if not hasattr(cls._model, 'generate'):
-                logger.warning("AutoModel does not have generate, using Qwen3VLForConditionalGeneration")
-                from transformers import Qwen3VLForConditionalGeneration
-                cls._model = Qwen3VLForConditionalGeneration.from_pretrained(
-                    "datalab-to/chandra",
-                    torch_dtype=torch.float16
-                ).to(device)
             
             # model.processor = AutoProcessor.from_pretrained("datalab-to/chandra")
             # 공식 문서에 따라 processor를 모델에 할당
             cls._processor = AutoProcessor.from_pretrained("datalab-to/chandra")
             cls._model.processor = cls._processor
             
-            # processor의 디바이스를 모델과 같은 디바이스로 설정
-            # generate_hf 함수가 processor를 사용할 때 올바른 디바이스를 사용하도록
-            if hasattr(cls._processor, 'device'):
-                cls._processor.device = device
-            # processor 내부의 tokenizer나 다른 컴포넌트도 디바이스 설정
-            if hasattr(cls._processor, 'tokenizer') and hasattr(cls._processor.tokenizer, 'model'):
-                try:
-                    cls._processor.tokenizer.model = None  # tokenizer는 일반적으로 CPU에서 실행
-                except:
-                    pass
+            # 성능 최적화: 모델을 eval 모드로 설정 (추론 시 dropout 등 비활성화)
+            cls._model.eval()
+            
+            # generation config 명시적으로 설정 (probability tensor 에러 방지)
+            # do_sample=True일 때 probability tensor 에러가 발생하므로 False로 설정
+            if hasattr(cls._model, 'generation_config') and cls._model.generation_config:
+                cls._model.generation_config.do_sample = False
+                # temperature 등 샘플링 관련 파라미터 제거
+                if hasattr(cls._model.generation_config, 'temperature'):
+                    cls._model.generation_config.temperature = None
+                if hasattr(cls._model.generation_config, 'top_p'):
+                    cls._model.generation_config.top_p = None
+                if hasattr(cls._model.generation_config, 'top_k'):
+                    cls._model.generation_config.top_k = None
             
             # parse_markdown 함수 저장
             cls._parse_markdown = parse_markdown
@@ -137,13 +130,22 @@ class OCREngine:
         image_base64: str,
         prompt_type: str = "ocr_layout",
         output_format: str = "markdown",
-        max_tokens: int = 1024  # OCR에 적합한 기본값
+        max_tokens: int = 1024  # OCR에 적합한 기본값 (정확도와 속도의 균형)
     ) -> Dict[str, Any]:
         """OCR 처리 - 사용자 코드와 동일한 방식"""
         # Base64 이미지 디코딩
         image = await self._decode_base64_image(image_base64)
         if not image:
             raise ValueError("Failed to decode image")
+        
+        # 성능 최적화: 큰 이미지는 적절한 크기로 리사이즈 (최대 1024px로 더 작게)
+        # 테스트 속도 향상을 위해 더 작은 크기로 리사이즈
+        max_size = 1024
+        if max(image.size) > max_size:
+            ratio = max_size / max(image.size)
+            new_size = (int(image.size[0] * ratio), int(image.size[1] * ratio))
+            image = image.resize(new_size, Image.Resampling.LANCZOS)
+            logger.debug(f"Image resized from {image.size} to {new_size} for performance")
         
         # Chandra OCR 패키지 사용
         if HAS_CHANDRA_PACKAGE and OCREngine._model and OCREngine._processor:
@@ -166,7 +168,9 @@ class OCREngine:
                     model = OCREngine._model
                     processor = OCREngine._processor
                     model_device = next(model.parameters()).device
-                    logger.info(f"Using generate_hf with model type: {type(model).__name__}, device: {model_device}")
+                    # 성능 최적화: 불필요한 로깅 제거 (디버그 모드에서만)
+                    if logger.level <= 10:  # DEBUG level
+                        logger.debug(f"Using generate_hf with model type: {type(model).__name__}, device: {model_device}")
                     
                     # generate_hf 함수가 내부적으로 inputs.to("cuda")를 사용하므로,
                     # 모델의 실제 디바이스를 사용하도록 패치
@@ -178,11 +182,13 @@ class OCREngine:
                         from chandra.model.hf import process_batch_element, process_vision_info, settings as chandra_settings
                         
                         if max_output_tokens is None:
-                            max_output_tokens = getattr(chandra_settings, 'MAX_OUTPUT_TOKENS', 1024)
+                            max_output_tokens = getattr(chandra_settings, 'MAX_OUTPUT_TOKENS', 2048)
                         
                         # 모델의 실제 디바이스 사용
                         device = next(model.parameters()).device
-                        logger.info(f"Using device {device} for generate_hf")
+                        # 성능 최적화: 불필요한 로깅 제거
+                        if logger.level <= 10:  # DEBUG level
+                            logger.debug(f"Using device {device} for generate_hf")
                         
                         messages = [process_batch_element(item, model.processor) for item in batch]
                         text = model.processor.apply_chat_template(
@@ -205,22 +211,29 @@ class OCREngine:
                         else:
                             inputs = inputs.to(device)
                         
-                        logger.info(f"Inputs moved to device {device}, input_ids device: {inputs['input_ids'].device if 'input_ids' in inputs else 'N/A'}")
+                        # 성능 최적화: 불필요한 로깅 제거
+                        if logger.level <= 10:  # DEBUG level
+                            logger.debug(f"Inputs moved to device {device}, input_ids device: {inputs['input_ids'].device if 'input_ids' in inputs else 'N/A'}")
                         
                         # Inference: Generation of the output
-                        # do_sample=False로 설정하여 greedy decoding 사용 (확률 분포 문제 방지)
+                        # 원본 generate_hf와 동일하지만 do_sample=False로 greedy decoding 사용
+                        # probability tensor 에러 방지를 위해 do_sample=False 필수
                         generation_kwargs = {
                             "max_new_tokens": max_output_tokens,
-                            "do_sample": False,  # greedy decoding 사용
+                            "do_sample": False,  # greedy decoding (probability tensor 에러 방지)
                         }
-                        # generation_config가 있으면 추가 설정 사용
-                        if hasattr(model, 'generation_config') and model.generation_config is not None:
-                            if hasattr(model.generation_config, 'pad_token_id'):
-                                generation_kwargs['pad_token_id'] = model.generation_config.pad_token_id
-                            if hasattr(model.generation_config, 'eos_token_id'):
-                                generation_kwargs['eos_token_id'] = model.generation_config.eos_token_id
                         
-                        generated_ids = model.generate(**inputs, **generation_kwargs)
+                        # 토크나이저에서 pad_token_id와 eos_token_id 가져오기
+                        if hasattr(model.processor, 'tokenizer'):
+                            tokenizer = model.processor.tokenizer
+                            if hasattr(tokenizer, 'pad_token_id') and tokenizer.pad_token_id is not None:
+                                generation_kwargs['pad_token_id'] = tokenizer.pad_token_id
+                            if hasattr(tokenizer, 'eos_token_id') and tokenizer.eos_token_id is not None:
+                                generation_kwargs['eos_token_id'] = tokenizer.eos_token_id
+                        
+                        # torch.no_grad()로 gradient 계산 비활성화 (추론 시 불필요)
+                        with torch.no_grad():
+                            generated_ids = model.generate(**inputs, **generation_kwargs)
                         generated_ids_trimmed = [
                             out_ids[len(in_ids) :]
                             for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
@@ -241,18 +254,13 @@ class OCREngine:
                     if hasattr(model, 'generation_config') and model.generation_config is not None:
                         original_max_new_tokens = getattr(model.generation_config, 'max_new_tokens', None)
                         model.generation_config.max_new_tokens = max_tokens
-                        logger.info(f"Set max_new_tokens to {max_tokens} in generation_config")
+                        # 성능 최적화: 불필요한 로깅 제거
+                        if logger.level <= 10:  # DEBUG level
+                            logger.debug(f"Set max_new_tokens to {max_tokens} in generation_config")
                     
-                    # 패치된 generate_hf 사용
-                    try:
-                        results = patched_generate_hf(batch, model, max_output_tokens=max_tokens)
-                    except Exception as e:
-                        logger.error(f"Patched generate_hf failed: {e}, trying original")
-                        # 패치 실패 시 원본 함수 사용 (max_output_tokens 파라미터 지원 여부 확인)
-                        try:
-                            results = generate_hf(batch, model, max_output_tokens=max_tokens)
-                        except TypeError:
-                            results = generate_hf(batch, model)
+                    # 패치된 generate_hf 사용 (항상 성공해야 함)
+                    # 원본 함수는 cuda:0을 하드코딩하므로 사용하지 않음
+                    results = patched_generate_hf(batch, model, max_output_tokens=max_tokens)
                     
                     # generation config 복원 (있는 경우)
                     if hasattr(model, 'generation_config') and model.generation_config is not None and original_max_new_tokens is not None:

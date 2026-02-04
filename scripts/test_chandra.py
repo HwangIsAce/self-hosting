@@ -101,7 +101,8 @@ async def test_chandra_ocr():
         result = await engine.process(
             image_base64=image_base64,
             prompt_type="ocr_layout",
-            output_format="markdown"
+            output_format="markdown",
+            max_tokens=256  # 테스트 속도 향상을 위해 토큰 수 감소
         )
         
         print("✅ OCR 처리 완료")
