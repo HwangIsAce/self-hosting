@@ -66,12 +66,18 @@ async def test_chandra_ocr():
     test_image_dir = project_root / "docs" / "input"
     test_image_path = None
     
-    # 디렉토리에서 파일 찾기
+    # 디렉토리에서 파일 찾기 (peterparser.png 우선)
     if test_image_dir.exists():
-        for file in os.listdir(str(test_image_dir)):
-            if file.endswith('.png'):
-                test_image_path = test_image_dir / file
-                break
+        # 먼저 peterparser.png 찾기
+        peterparser_path = test_image_dir / "peterparser.png"
+        if peterparser_path.exists():
+            test_image_path = peterparser_path
+        else:
+            # 없으면 첫 번째 .png 파일 사용
+            for file in os.listdir(str(test_image_dir)):
+                if file.endswith('.png'):
+                    test_image_path = test_image_dir / file
+                    break
     
     if not test_image_path or not test_image_path.exists():
         print(f"❌ 테스트 이미지가 없습니다: {test_image_dir}")

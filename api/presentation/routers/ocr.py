@@ -18,6 +18,7 @@ async def process_ocr(
     image_url: Optional[str] = Form(None),
     prompt_type: Optional[str] = Form("ocr_layout"),
     output_format: Optional[str] = Form("markdown"),
+    max_tokens: Optional[int] = Form(1024),  # OCR에 적합한 기본값 (2048에서 1024로 감소)
     service: OCRService = Depends(get_ocr_service)
 ) -> OCRResponse:
     """
@@ -52,7 +53,8 @@ async def process_ocr(
             image_base64=image_base64,
             image_url=image_url,
             prompt_type=prompt_type,
-            output_format=output_format
+            output_format=output_format,
+            max_tokens=max_tokens or 1024
         )
         
         # 응답 생성

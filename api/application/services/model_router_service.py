@@ -194,7 +194,8 @@ class ModelRouterService:
         self,
         image_base64: str,
         prompt_type: Optional[str] = "ocr_layout",
-        output_format: Optional[str] = "markdown"
+        output_format: Optional[str] = "markdown",
+        max_tokens: int = 1024
     ) -> Dict[str, Any]:
         """
         OCR 처리 요청을 로컬 Chandra OCR 엔진으로 라우팅
@@ -210,5 +211,6 @@ class ModelRouterService:
         return await engine.process(
             image_base64=image_base64,
             prompt_type=prompt_type,
-            output_format=output_format
+            output_format=output_format,
+            max_tokens=max_tokens
         )

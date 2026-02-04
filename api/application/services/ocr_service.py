@@ -19,7 +19,8 @@ class OCRService:
         image_base64: Optional[str] = None,
         image_url: Optional[str] = None,
         prompt_type: Optional[str] = "ocr_layout",
-        output_format: Optional[str] = "markdown"
+        output_format: Optional[str] = "markdown",
+        max_tokens: int = 1024
     ) -> Dict[str, Any]:
         """OCR 처리 (Chandra 모델 사용)"""
         if not image_base64 and not image_url:
@@ -38,7 +39,8 @@ class OCRService:
         result = await self.model_router.route_ocr_processing(
             image_base64=image_base64,
             prompt_type=prompt_type,
-            output_format=output_format
+            output_format=output_format,
+            max_tokens=max_tokens
         )
         
         return result
