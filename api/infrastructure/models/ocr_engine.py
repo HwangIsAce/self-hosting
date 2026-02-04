@@ -138,9 +138,10 @@ class OCREngine:
         if not image:
             raise ValueError("Failed to decode image")
         
-        # 성능 최적화: 큰 이미지는 적절한 크기로 리사이즈 (최대 1024px로 더 작게)
-        # 테스트 속도 향상을 위해 더 작은 크기로 리사이즈
-        max_size = 1024
+        # 성능 최적화: 큰 이미지는 적절한 크기로 리사이즈
+        # 표 인식 정확도를 위해 최대 크기를 2048px로 증가
+        # 1024px로 리사이즈하면 표의 세부 내용이 손실되어 "보내보내보내..." 같은 반복 텍스트 발생
+        max_size = 2048
         if max(image.size) > max_size:
             ratio = max_size / max(image.size)
             new_size = (int(image.size[0] * ratio), int(image.size[1] * ratio))
