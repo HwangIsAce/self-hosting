@@ -85,24 +85,11 @@ class OCREngine:
                 from api.config.settings import settings
                 cls._device_map = f"cuda:{settings.OCR_GPU_ID}"
             
-            # Flash Attention 2 사용 가능 여부 확인
-            use_flash_attention = False
-            try:
-                import flash_attn
-                use_flash_attention = True
-                logger.info("Flash Attention 2 available, using for Chandra OCR model")
-            except ImportError:
-                logger.warning("flash-attn not installed. Install with: pip install flash-attn for better performance")
-            
             # 모델 로드 옵션
             model_kwargs = {
                 "trust_remote_code": True,
                 "torch_dtype": torch.bfloat16,  # torch.float16은 logits가 nan이 되는 문제가 있으므로 bfloat16 사용
             }
-            
-            # Flash Attention 2 적용
-            if use_flash_attention:
-                model_kwargs["attn_implementation"] = "flash_attention_2"
             
             # Qwen3VLForConditionalGeneration을 사용해야 generate 메서드가 있음
             # AutoModel은 Qwen3VLModel을 반환하는데 generate가 없음

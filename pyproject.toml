@@ -3,7 +3,7 @@ name = "self-hosting"
 version = "0.1.0"
 description = "OpenAI-compatible API Gateway for Qwen LLM, Qwen VLM, and Docling services"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 dependencies = [
     # Web Framework
     "fastapi>=0.104.0",
@@ -29,8 +29,4 @@ dependencies = [
     "protobuf>=4.25.0",  # For VLM models
     "chandra-ocr>=0.1.8",
     "docling>=2.71.0",
-    # Performance optimization (optional but recommended)
-    # flash-attn requires CUDA compilation, install separately:
-    # pip install flash-attn --no-build-isolation
-    # or: uv run pip install flash-attn --no-build-isolation
 ]
