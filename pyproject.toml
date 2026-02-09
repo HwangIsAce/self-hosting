@@ -29,4 +29,8 @@ dependencies = [
     "protobuf>=4.25.0",  # For VLM models
     "chandra-ocr>=0.1.8",
     "docling>=2.71.0",
+    # Performance optimization (optional but recommended)
+    # flash-attn requires CUDA compilation, install separately:
+    # pip install flash-attn --no-build-isolation
+    # or: uv run pip install flash-attn --no-build-isolation
 ]

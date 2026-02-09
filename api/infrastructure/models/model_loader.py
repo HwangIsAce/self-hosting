@@ -16,6 +16,15 @@ class ModelLoader:
         self.loaded_tokenizers: Dict[str, Any] = {}
         self.loaded_processors: Dict[str, Any] = {}
     
+    def _check_flash_attention(self) -> bool:
+        """Flash Attention 2 사용 가능 여부 확인"""
+        try:
+            import flash_attn
+            return True
+        except ImportError:
+            logger.warning("flash-attn not installed. Install with: pip install flash-attn")
+            return False
+    
     def load_llm_model(
         self,
         model_name: str,
@@ -105,6 +114,11 @@ class ModelLoader:
         else:
             model_kwargs["device_map"] = "auto"
         
+        # Flash Attention 2 적용
+        if self._check_flash_attention():
+            model_kwargs["attn_implementation"] = "flash_attention_2"
+            logger.info("Using Flash Attention 2 for VLM model")
+        
         if use_quantization:
             from transformers import BitsAndBytesConfig
             quantization_config = BitsAndBytesConfig(
@@ -182,6 +196,11 @@ class ModelLoader:
             model_kwargs["device_map"] = device_map
         else:
             model_kwargs["device_map"] = "auto"
+        
+        # Flash Attention 2 적용
+        if self._check_flash_attention():
+            model_kwargs["attn_implementation"] = "flash_attention_2"
+            logger.info("Using Flash Attention 2 for OCR model")
         
         # Chandra는 Qwen3VLForConditionalGeneration 사용 (chandra.model.hf 참조)
         try:
