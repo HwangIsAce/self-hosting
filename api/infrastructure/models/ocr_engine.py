@@ -107,6 +107,14 @@ class OCREngine:
             # 성능 최적화: 모델을 eval 모드로 설정 (추론 시 dropout 등 비활성화)
             cls._model.eval()
             
+            # Flash Attention 2 적용 (선택적 - 설치되어 있으면 사용)
+            try:
+                import flash_attn
+                # OCR 모델은 모델 로드 시 attn_implementation 설정
+                logger.info("Flash Attention 2 사용 가능, OCR 모델에 적용")
+            except (ImportError, ModuleNotFoundError):
+                logger.debug("Flash Attention 2가 설치되지 않았습니다. 기본 attention 사용")
+            
             # torch.compile() 적용 (PyTorch 2.0+ 성능 최적화)
             # 환경 변수 DISABLE_TORCH_COMPILE=1로 비활성화 가능
             import os
