@@ -107,6 +107,16 @@ class OCREngine:
             # 성능 최적화: 모델을 eval 모드로 설정 (추론 시 dropout 등 비활성화)
             cls._model.eval()
             
+            # torch.compile() 적용 (PyTorch 2.0+ 성능 최적화)
+            # 환경 변수 DISABLE_TORCH_COMPILE=1로 비활성화 가능
+            import os
+            if os.getenv("DISABLE_TORCH_COMPILE", "0") != "1":
+                try:
+                    cls._model = torch.compile(cls._model, mode="reduce-overhead")
+                    logger.info("Chandra OCR model compiled with torch.compile()")
+                except Exception as e:
+                    logger.warning(f"torch.compile() failed for Chandra OCR: {e}, using uncompiled model")
+            
             # generation config 명시적으로 설정 (probability tensor 에러 방지)
             # do_sample=True일 때 probability tensor 에러가 발생하므로 False로 설정
             if hasattr(cls._model, 'generation_config') and cls._model.generation_config:
@@ -154,7 +164,7 @@ class OCREngine:
             logger.debug(f"Image resized from {image.size} to {new_size} for performance")
         
         # Chandra OCR 패키지 사용
-        if HAS_CHANDRA_PACKAGE and OCREngine._model and OCREngine._processor:
+        if HAS_CHANDRA_PACKAGE and OCREngine._model is not None and OCREngine._processor is not None:
             try:
                 # 1. BatchInputItem 생성 (Hugging Face 공식 문서 방식)
                 batch = [
@@ -347,7 +357,7 @@ class OCREngine:
             "metadata": {
                 "prompt_type": prompt_type,
                 "output_format": output_format,
-                "parser": "chandra" if HAS_CHANDRA_PACKAGE and OCREngine._model else "manual"
+                "parser": "chandra" if HAS_CHANDRA_PACKAGE and OCREngine._model is not None else "manual"
             }
         }
         

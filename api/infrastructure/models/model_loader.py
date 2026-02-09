@@ -1,5 +1,6 @@
 """모델 로더 - Hugging Face 모델 로드 및 관리"""
 
+import os
 from typing import Optional, Dict, Any
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, AutoProcessor, AutoModel
@@ -68,6 +69,15 @@ class ModelLoader:
         # 평가 모드로 설정
         model.eval()
         
+        # torch.compile() 적용 (PyTorch 2.0+ 성능 최적화)
+        # 환경 변수 DISABLE_TORCH_COMPILE=1로 비활성화 가능
+        if os.getenv("DISABLE_TORCH_COMPILE", "0") != "1":
+            try:
+                model = torch.compile(model, mode="reduce-overhead")
+                logger.info(f"Model {model_name} compiled with torch.compile()")
+            except Exception as e:
+                logger.warning(f"torch.compile() failed for {model_name}: {e}, using uncompiled model")
+        
         self.loaded_models[model_name] = model
         self.loaded_tokenizers[model_name] = tokenizer
         
@@ -122,6 +132,15 @@ class ModelLoader:
         )
         
         model.eval()
+        
+        # torch.compile() 적용 (PyTorch 2.0+ 성능 최적화)
+        # 환경 변수 DISABLE_TORCH_COMPILE=1로 비활성화 가능
+        if os.getenv("DISABLE_TORCH_COMPILE", "0") != "1":
+            try:
+                model = torch.compile(model, mode="reduce-overhead")
+                logger.info(f"VLM model {model_name} compiled with torch.compile()")
+            except Exception as e:
+                logger.warning(f"torch.compile() failed for {model_name}: {e}, using uncompiled model")
         
         self.loaded_models[model_name] = model
         self.loaded_processors[model_name] = processor
@@ -221,6 +240,15 @@ class ModelLoader:
             model.processor = processor
         
         model.eval()
+        
+        # torch.compile() 적용 (PyTorch 2.0+ 성능 최적화)
+        # 환경 변수 DISABLE_TORCH_COMPILE=1로 비활성화 가능
+        if os.getenv("DISABLE_TORCH_COMPILE", "0") != "1":
+            try:
+                model = torch.compile(model, mode="reduce-overhead")
+                logger.info(f"OCR model {model_name} compiled with torch.compile()")
+            except Exception as e:
+                logger.warning(f"torch.compile() failed for {model_name}: {e}, using uncompiled model")
         
         self.loaded_models[model_name] = model
         if processor:
