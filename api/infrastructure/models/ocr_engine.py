@@ -240,6 +240,7 @@ class OCREngine:
                         generation_kwargs = {
                             "max_new_tokens": max_output_tokens,
                             "do_sample": False,  # greedy decoding (probability tensor 에러 방지)
+                            "use_cache": True,  # KV Cache 활성화 (20-30% 속도 향상)
                         }
                         
                         # 토크나이저에서 pad_token_id와 eos_token_id 가져오기

@@ -264,7 +264,16 @@ class VLMEngine:
             "temperature": temperature,
             "top_p": top_p,
             "do_sample": temperature > 0,
+            "use_cache": True,  # KV Cache 활성화 (20-30% 속도 향상)
         }
+        
+        # pad_token_id 설정 (processor의 tokenizer에서 가져오기)
+        if hasattr(self.processor, 'tokenizer') and self.processor.tokenizer is not None:
+            tokenizer = self.processor.tokenizer
+            if hasattr(tokenizer, 'pad_token_id') and tokenizer.pad_token_id is not None:
+                generation_config["pad_token_id"] = tokenizer.pad_token_id
+            elif hasattr(tokenizer, 'eos_token_id') and tokenizer.eos_token_id is not None:
+                generation_config["pad_token_id"] = tokenizer.eos_token_id
         
         # 비동기로 생성
         loop = asyncio.get_event_loop()
