@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     
     # vLLM 설정
     USE_VLLM: bool = True  # vLLM 사용 여부 (기본값: True)
-    VLLM_GPU_MEMORY_UTILIZATION: float = 0.9  # GPU 메모리 사용률 (0.0-1.0)
+    VLLM_GPU_MEMORY_UTILIZATION: float = 0.75  # GPU 메모리 사용률 (0.0-1.0) - 메모리 초과 방지
     VLLM_MAX_MODEL_LEN: Optional[int] = None  # 최대 시퀀스 길이 (None = 자동)
     VLLM_TENSOR_PARALLEL_SIZE: int = 1  # 텐서 병렬화 (멀티 GPU 시)
     VLLM_DTYPE: str = "float16"  # 모델 데이터 타입
