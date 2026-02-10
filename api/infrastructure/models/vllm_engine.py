@@ -113,15 +113,24 @@ class VLLMEngine:
             "enforce_eager": True,  # Flash Attention 우회, 기본 PyTorch 연산 사용
         }
         
-        # Speculative Decoding은 vLLM 버전에 따라 지원 여부가 다름
-        # 지원되는 경우에만 추가
+        # Speculative Decoding 설정 (vLLM 0.15.1+ 지원)
         if settings.VLLM_SPECULATIVE_MODEL:
             try:
-                # vLLM 0.6.0+ 에서는 다른 방식으로 지원될 수 있음
-                # 현재 버전에서는 일단 제외
-                logger.warning("Speculative Decoding is not yet supported in this vLLM version")
-            except Exception:
-                pass
+                # dict 형태로 전달 (AsyncEngineArgs가 내부에서 SpeculativeConfig로 변환)
+                speculative_config_dict = {
+                    "model": settings.VLLM_SPECULATIVE_MODEL,
+                    "num_speculative_tokens": settings.VLLM_NUM_SPECULATIVE_TOKENS,
+                    "method": "draft_model"  # draft model 방식 사용
+                }
+                engine_args_dict["speculative_config"] = speculative_config_dict
+                logger.info(
+                    f"Speculative Decoding enabled: "
+                    f"draft_model={settings.VLLM_SPECULATIVE_MODEL}, "
+                    f"num_tokens={settings.VLLM_NUM_SPECULATIVE_TOKENS}"
+                )
+            except Exception as e:
+                logger.warning(f"Failed to configure Speculative Decoding: {str(e)}")
+                logger.warning("Continuing without Speculative Decoding")
         
         engine_args = AsyncEngineArgs(**engine_args_dict)
         
