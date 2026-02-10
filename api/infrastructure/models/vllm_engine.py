@@ -6,7 +6,23 @@ import uuid
 import os
 import sys
 import time
+import multiprocessing
 from tenacity import retry, stop_after_attempt, wait_exponential
+
+# CUDA와 multiprocessing 호환성을 위해 'spawn' start method 설정
+# vLLM이 multiprocessing을 사용하기 전에 반드시 설정해야 함
+# CUDA는 fork된 서브프로세스에서 재초기화할 수 없으므로 'spawn' 사용 필요
+# 환경 변수로도 설정 (자식 프로세스에서도 적용)
+os.environ.setdefault('VLLM_WORKER_MULTIPROC_METHOD', 'spawn')
+try:
+    current_method = multiprocessing.get_start_method(allow_none=True)
+    if current_method != 'spawn':
+        multiprocessing.set_start_method('spawn', force=True)
+except (RuntimeError, ValueError) as e:
+    # 이미 설정되었거나 설정할 수 없는 경우
+    # uvicorn reload 모드에서는 이미 초기화되었을 수 있음
+    # 환경 변수로 자식 프로세스에서 적용되도록 함
+    pass
 
 # 시스템 Flash Attention 차단 (vLLM이 자체 Flash Attention 사용)
 # 시스템에 설치된 flash_attn이 호환성 문제를 일으킬 수 있으므로

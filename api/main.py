@@ -2,6 +2,16 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import uvicorn
+import multiprocessing
+
+# CUDA와 multiprocessing 호환성을 위해 'spawn' start method 설정
+# vLLM이 multiprocessing을 사용하기 전에 반드시 설정해야 함
+try:
+    if multiprocessing.get_start_method(allow_none=True) != 'spawn':
+        multiprocessing.set_start_method('spawn', force=True)
+except (RuntimeError, ValueError):
+    # 이미 설정되었거나 설정할 수 없는 경우 무시
+    pass
 
 from api.presentation.routers import chat, completions, documents, models, ocr
 from api.presentation.middleware.error_handler import (
