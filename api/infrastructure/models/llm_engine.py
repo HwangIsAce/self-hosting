@@ -155,4 +155,73 @@ class LLMEngine:
                 formatted += f"Assistant: {content}\n\n"
         formatted += "Assistant: "
         return formatted
+    
+    async def generate_batch(
+        self,
+        messages_list: List[List[Dict[str, str]]],
+        temperature: float = 0.7,
+        max_tokens: int = 1000,
+        top_p: float = 0.9,
+        top_k: Optional[int] = None,
+        stop: Optional[List[str]] = None,
+        allow_partial_failure: bool = True,
+        **kwargs
+    ) -> List[Dict[str, Any]]:
+        """
+        배치 텍스트 생성 (HuggingFace - 여러 요청 동시 처리)
+        
+        여러 요청을 asyncio.gather로 동시에 처리합니다.
+        GPU는 순차 처리되지만, I/O와 전처리/후처리는 병렬로 처리됩니다.
+        
+        Args:
+            messages_list: 메시지 리스트의 리스트 (각각이 하나의 요청)
+            allow_partial_failure: 일부 실패 시에도 계속 진행 (기본값: True)
+            
+        Returns:
+            결과 리스트 (입력 순서와 동일)
+        """
+        if not self._loaded:
+            self.load_model()
+        
+        # 모든 요청을 동시에 처리
+        tasks = [
+            self.generate(
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                top_p=top_p,
+                top_k=top_k,
+                stop=stop,
+                **kwargs
+            )
+            for messages in messages_list
+        ]
+        
+        # 모든 요청을 동시에 실행
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # 예외를 에러 응답으로 변환
+        processed_results = []
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                logger.error(f"HuggingFace request {i} failed: {str(result)}")
+                processed_results.append({
+                    "choices": [{
+                        "message": {
+                            "role": "assistant",
+                            "content": f"Error: {str(result)}"
+                        },
+                        "finish_reason": "error"
+                    }],
+                    "usage": {
+                        "prompt_tokens": 0,
+                        "completion_tokens": 0,
+                        "total_tokens": 0
+                    },
+                    "error": str(result)
+                })
+            else:
+                processed_results.append(result)
+        
+        return processed_results
 

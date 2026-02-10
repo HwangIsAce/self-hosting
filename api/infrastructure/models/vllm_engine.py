@@ -5,6 +5,8 @@ import asyncio
 import uuid
 import os
 import sys
+import time
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 # 시스템 Flash Attention 차단 (vLLM이 자체 Flash Attention 사용)
 # 시스템에 설치된 flash_attn이 호환성 문제를 일으킬 수 있으므로
@@ -61,6 +63,8 @@ class VLLMEngine:
         self.tokenizer: Optional[AutoTokenizer] = None
         self._loaded = False
         self._request_counter = 0  # 고유 request_id 생성용
+        # 타임아웃 설정 (초)
+        self.default_timeout = getattr(settings, 'BATCH_TIMEOUT', 600.0)  # 10분
     
     def load_model(self):
         """vLLM 모델 로드"""
@@ -137,6 +141,11 @@ class VLLMEngine:
         if settings.VLLM_SPECULATIVE_MODEL:
             logger.info(f"  - Speculative Decoding: {settings.VLLM_SPECULATIVE_MODEL}")
     
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        reraise=True
+    )
     async def generate(
         self,
         messages: List[Dict[str, str]],
@@ -145,64 +154,86 @@ class VLLMEngine:
         top_p: float = 0.9,
         top_k: Optional[int] = None,
         stop: Optional[List[str]] = None,
+        timeout: Optional[float] = None,
         **kwargs
     ) -> Dict[str, Any]:
         """텍스트 생성 (vLLM - 단일 요청)"""
         if not self._loaded:
             self.load_model()
         
-        # 메시지를 프롬프트로 변환
-        prompt = self._format_messages(messages)
+        start_time = time.time()
+        timeout = timeout or self.default_timeout
         
-        # SamplingParams 설정
-        # vLLM은 top_k=None을 허용하지 않으므로 -1로 변환
-        sampling_params = SamplingParams(
-            temperature=temperature,
-            top_p=top_p,
-            top_k=top_k if top_k is not None else -1,
-            max_tokens=max_tokens,
-            stop=stop or [],
-        )
-        
-        # 고유 request_id 생성
-        self._request_counter += 1
-        request_id = f"req_{self._request_counter}_{uuid.uuid4().hex[:8]}"
-        
-        # vLLM으로 생성 (비동기)
-        final_output = None
-        async for request_output in self.llm.generate(
-            prompt,
-            sampling_params,
-            request_id
-        ):
-            final_output = request_output
-        
-        if final_output is None:
-            raise RuntimeError("vLLM generation failed: no output received")
-        
-        # 최종 결과 추출
-        output = final_output.outputs[0]
-        generated_text = output.text
-        
-        # 토큰 사용량 계산
-        prompt_tokens = len(final_output.prompt_token_ids)
-        completion_tokens = len(output.token_ids)
-        total_tokens = prompt_tokens + completion_tokens
-        
-        return {
-            "choices": [{
-                "message": {
-                    "role": "assistant",
-                    "content": generated_text
-                },
-                "finish_reason": output.finish_reason or "stop"
-            }],
-            "usage": {
-                "prompt_tokens": prompt_tokens,
-                "completion_tokens": completion_tokens,
-                "total_tokens": total_tokens
-            }
-        }
+        try:
+            # 메시지를 프롬프트로 변환
+            prompt = self._format_messages(messages)
+            
+            # SamplingParams 설정
+            # vLLM은 top_k=None을 허용하지 않으므로 -1로 변환
+            sampling_params = SamplingParams(
+                temperature=temperature,
+                top_p=top_p,
+                top_k=top_k if top_k is not None else -1,
+                max_tokens=max_tokens,
+                stop=stop or [],
+            )
+            
+            # 고유 request_id 생성
+            self._request_counter += 1
+            request_id = f"req_{self._request_counter}_{uuid.uuid4().hex[:8]}"
+            
+            # 타임아웃과 함께 vLLM으로 생성
+            async with asyncio.timeout(timeout):
+                final_output = None
+                async for request_output in self.llm.generate(
+                    prompt,
+                    sampling_params,
+                    request_id
+                ):
+                    final_output = request_output
+                
+                if final_output is None:
+                    raise RuntimeError("vLLM generation failed: no output received")
+                
+                # 최종 결과 추출
+                output = final_output.outputs[0]
+                generated_text = output.text
+                
+                # 토큰 사용량 계산
+                prompt_tokens = len(final_output.prompt_token_ids)
+                completion_tokens = len(output.token_ids)
+                total_tokens = prompt_tokens + completion_tokens
+                
+                elapsed = time.time() - start_time
+                tps = total_tokens / elapsed if elapsed > 0 else 0
+                
+                logger.info(
+                    f"Generation completed: {elapsed:.2f}s, "
+                    f"{total_tokens} tokens, {tps:.2f} tokens/sec"
+                )
+                
+                return {
+                    "choices": [{
+                        "message": {
+                            "role": "assistant",
+                            "content": generated_text
+                        },
+                        "finish_reason": output.finish_reason or "stop"
+                    }],
+                    "usage": {
+                        "prompt_tokens": prompt_tokens,
+                        "completion_tokens": completion_tokens,
+                        "total_tokens": total_tokens
+                    }
+                }
+        except asyncio.TimeoutError:
+            elapsed = time.time() - start_time
+            logger.error(f"vLLM generation timeout after {elapsed:.2f}s")
+            raise RuntimeError(f"vLLM generation timeout after {timeout}s")
+        except Exception as e:
+            elapsed = time.time() - start_time
+            logger.error(f"vLLM generation error after {elapsed:.2f}s: {str(e)}")
+            raise
     
     async def generate_batch(
         self,
@@ -212,25 +243,78 @@ class VLLMEngine:
         top_p: float = 0.9,
         top_k: Optional[int] = None,
         stop: Optional[List[str]] = None,
+        timeout: Optional[float] = None,
+        allow_partial_failure: bool = True,
+        chunk_size: Optional[int] = None,
         **kwargs
     ) -> List[Dict[str, Any]]:
         """
         배치 텍스트 생성 (vLLM - 여러 요청 동시 처리)
         
         Continuous Batching을 활용하여 여러 요청을 효율적으로 처리합니다.
-        예: 100개 chunk enrich 시 4-7배 빠름
         
         Args:
             messages_list: 메시지 리스트의 리스트 (각각이 하나의 요청)
+            allow_partial_failure: 일부 실패 시에도 계속 진행 (기본값: True)
+            chunk_size: 대량 배치를 청크로 나눌 크기 (None = 전체 처리)
             
         Returns:
-            결과 리스트 (입력 순서와 동일)
+            결과 리스트 (입력 순서와 동일, 실패한 경우 에러 정보 포함)
         """
         if not self._loaded:
             self.load_model()
         
+        start_time = time.time()
+        timeout = timeout or self.default_timeout
+        chunk_size = chunk_size or getattr(settings, 'BATCH_CHUNK_SIZE', None)
+        
+        # 대량 배치는 청크로 나누기
+        if chunk_size and len(messages_list) > chunk_size:
+            logger.info(
+                f"Large batch detected ({len(messages_list)} requests), "
+                f"processing in chunks of {chunk_size}"
+            )
+            results = []
+            for i in range(0, len(messages_list), chunk_size):
+                chunk = messages_list[i:i+chunk_size]
+                chunk_results = await self._process_batch_chunk(
+                    chunk, temperature, max_tokens, top_p, top_k, stop, timeout,
+                    allow_partial_failure, **kwargs
+                )
+                results.extend(chunk_results)
+            
+            elapsed = time.time() - start_time
+            total_tokens = sum(
+                r.get('usage', {}).get('total_tokens', 0) 
+                for r in results 
+                if isinstance(r, dict) and 'usage' in r
+            )
+            tps = total_tokens / elapsed if elapsed > 0 else 0
+            logger.info(
+                f"Batch generation completed: {elapsed:.2f}s, "
+                f"{len(results)} requests, {total_tokens} tokens, {tps:.2f} tokens/sec"
+            )
+            return results
+        
+        return await self._process_batch_chunk(
+            messages_list, temperature, max_tokens, top_p, top_k, stop, timeout,
+            allow_partial_failure, **kwargs
+        )
+    
+    async def _process_batch_chunk(
+        self,
+        messages_list: List[List[Dict[str, str]]],
+        temperature: float,
+        max_tokens: int,
+        top_p: float,
+        top_k: Optional[int],
+        stop: Optional[List[str]],
+        timeout: float,
+        allow_partial_failure: bool,
+        **kwargs
+    ) -> List[Dict[str, Any]]:
+        """배치 청크 처리 (내부 헬퍼)"""
         # SamplingParams 설정
-        # vLLM은 top_k=None을 허용하지 않으므로 -1로 변환
         sampling_params = SamplingParams(
             temperature=temperature,
             top_p=top_p,
@@ -239,7 +323,7 @@ class VLLMEngine:
             stop=stop or [],
         )
         
-        # 모든 요청을 동시에 제출 (vLLM이 자동으로 배치 처리)
+        # 모든 요청을 동시에 제출
         tasks = []
         request_ids = []
         
@@ -247,16 +331,94 @@ class VLLMEngine:
             prompt = self._format_messages(messages)
             request_id = f"batch_{self._request_counter}_{i}_{uuid.uuid4().hex[:8]}"
             request_ids.append(request_id)
-            
-            # 각 요청을 비동기 태스크로 생성
-            tasks.append(self._generate_single(prompt, sampling_params, request_id))
+            tasks.append(
+                self._generate_single_with_error_handling(
+                    prompt, sampling_params, request_id, timeout, allow_partial_failure
+                )
+            )
         
         self._request_counter += len(messages_list)
         
-        # 모든 요청을 동시에 실행 (vLLM이 자동 배치 처리)
-        results = await asyncio.gather(*tasks)
-        
-        return results
+        # 모든 요청을 동시에 실행 (부분 실패 허용)
+        if allow_partial_failure:
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            # 예외를 에러 응답으로 변환
+            processed_results = []
+            for i, result in enumerate(results):
+                if isinstance(result, Exception):
+                    logger.error(f"Request {i} failed: {str(result)}")
+                    processed_results.append({
+                        "choices": [{
+                            "message": {
+                                "role": "assistant",
+                                "content": f"Error: {str(result)}"
+                            },
+                            "finish_reason": "error"
+                        }],
+                        "usage": {
+                            "prompt_tokens": 0,
+                            "completion_tokens": 0,
+                            "total_tokens": 0
+                        },
+                        "error": str(result)
+                    })
+                else:
+                    processed_results.append(result)
+            return processed_results
+        else:
+            # 전체 실패 시 예외 발생
+            return await asyncio.gather(*tasks)
+    
+    async def _generate_single_with_error_handling(
+        self,
+        prompt: str,
+        sampling_params: SamplingParams,
+        request_id: str,
+        timeout: float,
+        allow_partial_failure: bool
+    ) -> Dict[str, Any]:
+        """단일 요청 생성 (에러 핸들링 포함)"""
+        try:
+            async with asyncio.timeout(timeout):
+                final_output = None
+                async for request_output in self.llm.generate(
+                    prompt,
+                    sampling_params,
+                    request_id
+                ):
+                    final_output = request_output
+                
+                if final_output is None:
+                    raise RuntimeError(f"vLLM generation failed for {request_id}")
+                
+                output = final_output.outputs[0]
+                generated_text = output.text
+                
+                prompt_tokens = len(final_output.prompt_token_ids)
+                completion_tokens = len(output.token_ids)
+                total_tokens = prompt_tokens + completion_tokens
+                
+                return {
+                    "choices": [{
+                        "message": {
+                            "role": "assistant",
+                            "content": generated_text
+                        },
+                        "finish_reason": output.finish_reason or "stop"
+                    }],
+                    "usage": {
+                        "prompt_tokens": prompt_tokens,
+                        "completion_tokens": completion_tokens,
+                        "total_tokens": total_tokens
+                    }
+                }
+        except asyncio.TimeoutError:
+            raise RuntimeError(f"vLLM generation timeout for {request_id}")
+        except Exception as e:
+            if allow_partial_failure:
+                raise  # 상위에서 처리
+            else:
+                raise RuntimeError(f"vLLM generation error for {request_id}: {str(e)}")
     
     async def _generate_single(
         self,

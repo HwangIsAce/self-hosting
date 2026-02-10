@@ -134,3 +134,70 @@ class ChatCompletionResponse(BaseModel):
                 }
             }
         }
+
+
+class BatchChatCompletionRequest(BaseModel):
+    """배치 Chat Completions 요청"""
+    requests: List[ChatCompletionRequest] = Field(
+        ..., 
+        description="처리할 요청 리스트",
+        min_length=1,
+        max_length=100  # 최대 100개 요청
+    )
+    
+    @field_validator('requests')
+    @classmethod
+    def validate_requests(cls, v):
+        if not v:
+            raise ValueError('Requests cannot be empty')
+        if len(v) > 100:
+            raise ValueError('Maximum 100 requests allowed per batch')
+        return v
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "requests": [
+                    {
+                        "model": "qwen-llm-7b",
+                        "messages": [{"role": "user", "content": "Hello!"}]
+                    },
+                    {
+                        "model": "qwen-llm-7b",
+                        "messages": [{"role": "user", "content": "How are you?"}]
+                    }
+                ]
+            }
+        }
+
+
+class BatchChatCompletionResponse(BaseModel):
+    """배치 Chat Completions 응답"""
+    responses: List[ChatCompletionResponse] = Field(
+        ..., 
+        description="응답 리스트 (입력 순서와 동일)"
+    )
+    total_requests: int = Field(..., description="총 요청 수")
+    successful_requests: int = Field(..., description="성공한 요청 수")
+    failed_requests: int = Field(..., description="실패한 요청 수")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "responses": [
+                    {
+                        "id": "chatcmpl-123",
+                        "model": "qwen-llm-7b",
+                        "choices": [{
+                            "index": 0,
+                            "message": {"role": "assistant", "content": "Hello!"},
+                            "finish_reason": "stop"
+                        }],
+                        "usage": {"prompt_tokens": 5, "completion_tokens": 2, "total_tokens": 7}
+                    }
+                ],
+                "total_requests": 1,
+                "successful_requests": 1,
+                "failed_requests": 0
+            }
+        }

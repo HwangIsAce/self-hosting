@@ -82,6 +82,12 @@ class Settings(BaseSettings):
     ENABLE_CACHE: bool = False
     CACHE_URL: Optional[str] = None
     
+    # 배치 처리 설정
+    BATCH_MAX_REQUESTS: int = 100  # 배치 최대 요청 수
+    BATCH_CHUNK_SIZE: Optional[int] = None  # 대량 배치 청크 크기 (None = 자동)
+    BATCH_TIMEOUT: float = 600.0  # 배치 처리 타임아웃 (초) - 10분
+    BATCH_ALLOW_PARTIAL_FAILURE: bool = True  # 부분 실패 허용
+    
     class Config:
         env_file = ".env"
         case_sensitive = True
