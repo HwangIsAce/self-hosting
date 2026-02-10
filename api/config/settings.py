@@ -25,6 +25,22 @@ class Settings(BaseSettings):
     LOAD_IN_8BIT: bool = False
     LOAD_IN_4BIT: bool = False
     
+    # vLLM 설정
+    USE_VLLM: bool = True  # vLLM 사용 여부 (기본값: True)
+    VLLM_GPU_MEMORY_UTILIZATION: float = 0.9  # GPU 메모리 사용률 (0.0-1.0)
+    VLLM_MAX_MODEL_LEN: Optional[int] = None  # 최대 시퀀스 길이 (None = 자동)
+    VLLM_TENSOR_PARALLEL_SIZE: int = 1  # 텐서 병렬화 (멀티 GPU 시)
+    VLLM_DTYPE: str = "float16"  # 모델 데이터 타입
+    VLLM_TRUST_REMOTE_CODE: bool = True  # trust_remote_code
+    
+    # Speculative Decoding (선택사항 - 나중에 활성화 가능)
+    VLLM_SPECULATIVE_MODEL: Optional[str] = None  # 예: "Qwen/Qwen2.5-0.5B-Instruct"
+    VLLM_NUM_SPECULATIVE_TOKENS: int = 5  # Speculative Decoding 토큰 수
+    
+    # Continuous Batching 설정
+    VLLM_MAX_NUM_BATCHED_TOKENS: Optional[int] = None  # 최대 배치 토큰 수
+    VLLM_MAX_NUM_SEQS: int = 256  # 최대 동시 시퀀스 수
+    
     # 모델 캐시 디렉토리
     MODEL_CACHE_DIR: str = "/root/.cache/huggingface"
     

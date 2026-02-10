@@ -30,4 +30,6 @@ dependencies = [
     "chandra-ocr>=0.1.8",
     "docling>=2.71.0",
     "einops>=0.8.2",
+    # vLLM for high-performance LLM inference
+    "vllm>=0.6.0",
 ]
