@@ -12,6 +12,7 @@ from api.config.logging_config import get_logger
 
 # 로컬 모델 엔진
 from api.infrastructure.models.llm_engine import LLMEngine
+from api.infrastructure.models.vllm_engine import VLLMEngine  # vLLM 엔진 추가
 from api.infrastructure.models.vlm_engine import VLMEngine
 from api.infrastructure.models.ocr_engine import OCREngine
 from api.infrastructure.models.docling_engine import DoclingEngine
@@ -23,7 +24,8 @@ class ModelRouterService:
     """모델별 요청을 적절한 로컬 모델 엔진으로 라우팅"""
     
     def __init__(self):
-        self.llm_engine = None
+        self.llm_engine = None  # HuggingFace 엔진 (백업용)
+        self.vllm_engine = None  # vLLM 엔진 (새로 추가)
         self.vlm_engine = None
         self.ocr_engine = None
         self.docling_engine = None
@@ -39,14 +41,28 @@ class ModelRouterService:
     def _get_engine(self, pod_type: str):
         """Pod 타입에 따라 모델 엔진 반환"""
         if pod_type == "llm":
-            if self.llm_engine is None:
-                device_map = f"cuda:{settings.LLM_GPU_ID}"
-                self.llm_engine = LLMEngine(
-                    model_name=settings.LLM_MODEL_NAME,
-                    device_map=device_map,
-                    use_quantization=settings.USE_QUANTIZATION
-                )
-            return self.llm_engine
+            # vLLM 사용 여부 확인
+            if settings.USE_VLLM:
+                if self.vllm_engine is None:
+                    device_map = f"cuda:{settings.LLM_GPU_ID}"
+                    logger.info(f"Initializing vLLM engine for LLM on {device_map}")
+                    self.vllm_engine = VLLMEngine(
+                        model_name=settings.LLM_MODEL_NAME,
+                        device_map=device_map,
+                        use_quantization=settings.USE_QUANTIZATION
+                    )
+                return self.vllm_engine
+            else:
+                # 백업: 기존 HuggingFace 엔진
+                if self.llm_engine is None:
+                    device_map = f"cuda:{settings.LLM_GPU_ID}"
+                    logger.info(f"Initializing HuggingFace engine for LLM on {device_map}")
+                    self.llm_engine = LLMEngine(
+                        model_name=settings.LLM_MODEL_NAME,
+                        device_map=device_map,
+                        use_quantization=settings.USE_QUANTIZATION
+                    )
+                return self.llm_engine
         elif pod_type == "vlm":
             if self.vlm_engine is None:
                 device_map = f"cuda:{settings.VLM_GPU_ID}"
@@ -90,6 +106,7 @@ class ModelRouterService:
         
         # 모델 엔진으로 직접 생성
         if pod_type == "llm":
+            # vLLM 엔진인지 확인 (동일한 인터페이스이므로 그대로 사용 가능)
             response = await engine.generate(
                 messages=messages,
                 temperature=request.temperature,
