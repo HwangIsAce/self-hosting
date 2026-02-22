@@ -20,6 +20,12 @@ class Settings(BaseSettings):
     VLM_GPU_ID: int = 1  # GPU 1: Qwen VLM
     OCR_GPU_ID: int = 2  # GPU 2: Docling + Chandra OCR
     
+    # Docling GPU 가속 (https://docling-project.github.io/docling/usage/gpu/)
+    DOCLING_USE_GPU: bool = True
+    DOCLING_GPU_ID: int = 2  # OCR과 동일 GPU 사용 가능
+    DOCLING_OCR_BATCH_SIZE: int = 16  # GPU 사용 시 OCR 배치 크기
+    DOCLING_LAYOUT_BATCH_SIZE: int = 16  # GPU 사용 시 layout 배치 크기
+    
     # 모델 옵션
     USE_QUANTIZATION: bool = False  # 양자화 사용 여부
     LOAD_IN_8BIT: bool = False

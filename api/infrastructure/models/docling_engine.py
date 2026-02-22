@@ -1,4 +1,4 @@
-"""Docling 실행 엔진 - 문서 처리"""
+"""Docling 실행 엔진 - 문서 처리 (GPU 가속 지원)"""
 
 from typing import Dict, Any, Optional
 import base64
@@ -11,22 +11,61 @@ from pathlib import Path
 from docling.document_converter import DocumentConverter, PdfFormatOption
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import PdfPipelineOptions
+from api.config.settings import settings
 from api.config.logging_config import get_logger
 
 logger = get_logger(__name__)
 
 
+def _build_docling_pipeline_options():
+    """Docling 파이프라인 옵션 생성 (GPU 사용 시 AcceleratorOptions 및 배치 크기 적용)"""
+    use_gpu = getattr(settings, "DOCLING_USE_GPU", False)
+    gpu_id = getattr(settings, "DOCLING_GPU_ID", 2)
+    ocr_batch = getattr(settings, "DOCLING_OCR_BATCH_SIZE", 16)
+    layout_batch = getattr(settings, "DOCLING_LAYOUT_BATCH_SIZE", 16)
+
+    # GPU 사용 시 ThreadedPdfPipelineOptions로 배치 크기 설정 (선택)
+    try:
+        from docling.datamodel.accelerator_options import AcceleratorOptions
+        import torch
+
+        if use_gpu and torch.cuda.is_available():
+            accelerator_options = AcceleratorOptions(
+                device=f"cuda:{gpu_id}",
+                num_threads=4,
+            )
+            try:
+                from docling.datamodel.pipeline_options import ThreadedPdfPipelineOptions
+                pipeline_options = ThreadedPdfPipelineOptions(
+                    ocr_batch_size=ocr_batch,
+                    layout_batch_size=layout_batch,
+                )
+                logger.info(
+                    f"Docling GPU enabled: cuda:{gpu_id}, ocr_batch_size={ocr_batch}, layout_batch_size={layout_batch}"
+                )
+            except ImportError:
+                pipeline_options = PdfPipelineOptions()
+                logger.info(f"Docling GPU enabled: cuda:{gpu_id} (ThreadedPdfPipelineOptions unavailable)")
+            pipeline_options.accelerator_options = accelerator_options
+        else:
+            pipeline_options = PdfPipelineOptions()
+            if use_gpu and not torch.cuda.is_available():
+                logger.warning("Docling USE_GPU=True but CUDA not available, using CPU")
+    except ImportError as e:
+        logger.warning(f"Docling accelerator options unavailable: {e}, using CPU")
+        pipeline_options = PdfPipelineOptions()
+
+    pipeline_options.do_ocr = True
+    pipeline_options.do_table_structure = True
+    pipeline_options.table_structure_options.do_cell_matching = True
+    return pipeline_options
+
+
 class DoclingEngine:
-    """Docling 문서 처리 엔진"""
+    """Docling 문서 처리 엔진 (GPU 가속 지원)"""
     
     def __init__(self):
-        # Docling DocumentConverter 초기화
-        # 옵션 설정: OCR 활성화, 표 추출 등
-        pipeline_options = PdfPipelineOptions()
-        pipeline_options.do_ocr = True  # OCR 활성화
-        pipeline_options.do_table_structure = True  # 표 구조 추출
-        pipeline_options.table_structure_options.do_cell_matching = True
-        
+        pipeline_options = _build_docling_pipeline_options()
         self.converter = DocumentConverter(
             format_options={
                 InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)
