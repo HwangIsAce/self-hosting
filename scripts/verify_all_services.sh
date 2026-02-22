@@ -45,7 +45,17 @@ curl -s -X POST "$BASE_URL/v1/documents/process" -F "file=@/tmp/verify_docling.t
 echo ""
 
 echo ""
+echo "6. GPU2 직렬화 (Docling → OCR 순차, 한 시점에 한 엔진만)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "$SCRIPT_DIR/verify_gpu2_serialization.sh" ]; then
+  bash "$SCRIPT_DIR/verify_gpu2_serialization.sh" "$BASE_URL"
+else
+  echo "Docling then OCR 순서로 요청해 서버 로그에서 unload_other_gpu2_engines 확인"
+fi
+echo ""
+
 echo "=== 검증 완료. 서버 로그에서 다음을 확인하세요: ==="
 echo "  - vLLM: 'vLLM model ... loaded successfully', 'Generation completed: ... tokens/sec'"
 echo "  - Docling: 'Docling GPU enabled: cuda:N'"
 echo "  - Chandra: 'Chandra model initialized successfully'"
+echo "  - GPU2 직렬화: Docling/OCR 처리 시 unload_other_gpu2_engines, 한 엔진만 로드"
