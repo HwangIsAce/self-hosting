@@ -132,7 +132,7 @@ class ModelRouterService:
         self, 
         request: ChatCompletionRequest
     ) -> Dict[str, Any]:
-        """OpenAI 요청 형식을 RunPod Pod 형식으로 변환"""
+        """OpenAI 요청 형식을 RunPod Pod 형식으로 변환 (RunPod 모드 사용 시 활용). 현재는 로컬 엔진만 사용하므로 호출되지 않음."""
         payload = {
             "messages": [msg.model_dump(exclude_none=True) for msg in request.messages],
             "temperature": request.temperature,
@@ -158,7 +158,7 @@ class ModelRouterService:
         model: str, 
         runpod_response: Dict[str, Any]
     ) -> ChatCompletionResponse:
-        """RunPod 응답을 OpenAI 형식으로 변환"""
+        """백엔드(로컬 엔진 또는 RunPod) 응답을 OpenAI 형식으로 변환"""
         choices = []
         for idx, choice in enumerate(runpod_response.get("choices", [])):
             message_data = choice.get("message", {})
