@@ -9,6 +9,7 @@ import asyncio
 
 from api.infrastructure.models.model_loader import ModelLoader
 from api.config.logging_config import get_logger
+from api.infrastructure.utils.gpu2_lock import gpu2_lock, set_current_gpu2_engine
 
 # Chandra OCR 패키지 사용 시도
 try:
@@ -303,9 +304,14 @@ class OCREngine:
                     
                     return result
                 
-                # 비동기로 실행
-                loop = asyncio.get_event_loop()
-                result = await loop.run_in_executor(None, generate_ocr)
+                # GPU 2 직렬화: 락 획득 후 OCR만 실행 (Docling/ColPali와 동시 실행 방지)
+                async with gpu2_lock:
+                    set_current_gpu2_engine("ocr")
+                    try:
+                        loop = asyncio.get_event_loop()
+                        result = await loop.run_in_executor(None, generate_ocr)
+                    finally:
+                        set_current_gpu2_engine(None)
                 
                 # 디버깅: raw 출력 확인
                 logger.info(f"OCR raw output length: {len(result.raw) if result.raw else 0}")
