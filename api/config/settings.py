@@ -26,6 +26,10 @@ class Settings(BaseSettings):
     DOCLING_OCR_BATCH_SIZE: int = 16  # GPU 사용 시 OCR 배치 크기
     DOCLING_LAYOUT_BATCH_SIZE: int = 16  # GPU 사용 시 layout 배치 크기
     
+    # ColPali (문서 검색용 비전-언어 모델, GPU 2 직렬화)
+    COLPALI_MODEL_NAME: str = "vidore/colpali-v1.3-hf"
+    COLPALI_GPU_ID: int = 2  # Docling/OCR과 동일 GPU, gpu2_lock으로 직렬 사용
+    
     # 모델 옵션
     USE_QUANTIZATION: bool = False  # 양자화 사용 여부
     LOAD_IN_8BIT: bool = False
