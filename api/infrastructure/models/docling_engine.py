@@ -13,6 +13,7 @@ from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import PdfPipelineOptions
 from api.config.settings import settings
 from api.config.logging_config import get_logger
+from api.infrastructure.utils.gpu2_lock import gpu2_lock, set_current_gpu2_engine
 
 logger = get_logger(__name__)
 
@@ -137,16 +138,20 @@ class DoclingEngine:
             
             logger.info(f"Processing document with Docling: type={ext}, size={len(file_data)} bytes")
             
-            # Docling으로 문서 변환 (동기 함수를 비동기로 실행)
-            loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(
-                None,
-                self._convert_document,
-                temp_file,
-                options
-            )
-            
-            return result
+            # GPU 2 직렬화: 락 획득 후 Docling만 실행 (OCR/ColPali와 동시 실행 방지)
+            async with gpu2_lock:
+                set_current_gpu2_engine("docling")
+                try:
+                    loop = asyncio.get_event_loop()
+                    result = await loop.run_in_executor(
+                        None,
+                        self._convert_document,
+                        temp_file,
+                        options
+                    )
+                    return result
+                finally:
+                    set_current_gpu2_engine(None)
             
         except Exception as e:
             logger.exception(f"Error processing document: {str(e)}")
