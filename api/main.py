@@ -61,7 +61,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Self-Hosting API",
-    description="OpenAI-compatible API for Qwen LLM (HF), Qwen VLM (HF), and Docling Framework on RunPod RTX 4090",
+    description="OpenAI-compatible API for Qwen LLM (HF), Qwen VLM (HF), and Docling Framework on local GPU or RunPod RTX 4090",
     version="1.0.0",
     lifespan=lifespan
 )

@@ -1,6 +1,6 @@
 # Self-Hosting API
 
-OpenAI-compatible API Gateway for Qwen LLM, Qwen VLM, and Docling (with Chandra OCR) services running on RunPod RTX 4090 GPUs.
+OpenAI-compatible API Gateway for Qwen LLM, Qwen VLM, and Docling (with Chandra OCR) services on local GPU or RunPod RTX 4090.
 
 ## 기술 스택
 
@@ -12,15 +12,17 @@ OpenAI-compatible API Gateway for Qwen LLM, Qwen VLM, and Docling (with Chandra 
 ## 📚 문서
 
 - [배포 가이드 (Deployment Guide)](./DEPLOYMENT.md) - 상세한 배포 및 설정 방법
-- [프로덕션 준비 체크리스트 (Production Checklist)](./PRODUCTION_CHECKLIST.md) - 프로덕션 배포 전 확인 사항
+- 프로덕션 준비 체크리스트 (Production Checklist) (준비 중)
 
 ## 🏗️ 아키텍처
 
+기본적으로 **로컬 GPU**에서 모델을 실행하며, RunPod 엔드포인트를 설정하면 원격 Pod로도 라우팅할 수 있습니다.
+
 ```
-Client → API Gateway (FastAPI) → RunPod Pods
-                                ├── RTX 4090 #1: Qwen LLM (Hugging Face)
-                                ├── RTX 4090 #2: Qwen VLM (Hugging Face)
-                                └── RTX 4090 #3: Docling Framework (with Chandra OCR)
+Client → API Gateway (FastAPI) → 로컬 엔진 또는 RunPod Pods
+                                ├── GPU #1: Qwen LLM (Hugging Face / vLLM)
+                                ├── GPU #2: Qwen VLM (Hugging Face)
+                                └── GPU #3: Docling Framework (with Chandra OCR)
 ```
 
 ## 🎯 사용 방법

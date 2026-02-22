@@ -27,9 +27,9 @@ async def create_chat_completion(
     """
     Chat Completions 엔드포인트 (OpenAI API 호환)
     
-    모델별로 자동으로 적절한 RunPod Pod로 라우팅됩니다:
-    - qwen-llm* → LLM Pod (RTX 4090 #1)
-    - qwen-vlm* → VLM Pod (RTX 4090 #2)
+    모델별로 자동으로 적절한 로컬 엔진 또는 RunPod Pod로 라우팅됩니다:
+    - qwen-llm* → LLM 엔진 (GPU #1)
+    - qwen-vlm* → VLM 엔진 (GPU #2)
     """
     try:
         logger.info(f"Chat completion request: model={request.model}, messages={len(request.messages)}")
