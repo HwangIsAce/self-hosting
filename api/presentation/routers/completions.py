@@ -19,17 +19,14 @@ async def create_completion(
     router: ModelRouterService = Depends(get_model_router_service)
 ) -> CompletionResponse:
     """
-    Text Completions 엔드포인트 (레거시 OpenAI API)
-    
-    Chat Completions API 사용을 권장합니다.
+    레거시 Text Completions 엔드포인트 (OpenAI 호환).
+    현재 미구현이며, /v1/chat/completions 사용을 권장합니다.
     """
     try:
         logger.info(f"Completion request: model={request.model}")
-        # TODO: CompletionRequest를 ChatCompletionRequest로 변환하여 처리
-        # 현재는 구현되지 않음
         raise HTTPException(
             status_code=501,
-            detail="Text completions endpoint not yet implemented. Please use /v1/chat/completions instead."
+            detail="Text completions is not implemented. Please use POST /v1/chat/completions instead."
         )
     except UnknownModelError as e:
         raise HTTPException(status_code=400, detail=str(e))

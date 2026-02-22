@@ -22,18 +22,14 @@ class OCRService:
         output_format: Optional[str] = "markdown",
         max_tokens: int = 1024
     ) -> Dict[str, Any]:
-        """OCR 처리 (Chandra 모델 사용)"""
+        """OCR 처리 (Chandra 모델 사용). 현재는 이미지 파일 업로드(image_base64)만 지원합니다."""
         if not image_base64 and not image_url:
             raise ValueError("Either image_base64 or image_url must be provided")
         
         logger.info(f"Processing OCR: prompt_type={prompt_type}, output_format={output_format}")
         
-        # file_url이 제공된 경우, 나중에 클라이언트에서 처리하거나
-        # 여기서 다운로드하여 base64로 변환할 수 있음
-        # 현재는 image_base64만 지원
         if image_url:
-            # TODO: URL에서 이미지 다운로드 및 base64 변환
-            raise NotImplementedError("image_url processing not yet implemented")
+            raise NotImplementedError("image_url은 현재 미지원입니다. 이미지 파일을 업로드해 주세요.")
         
         # Chandra OCR 모델로 라우팅 (같은 Pod이지만 다른 엔드포인트)
         result = await self.model_router.route_ocr_processing(

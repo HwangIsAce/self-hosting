@@ -24,14 +24,10 @@ async def process_ocr(
     """
     OCR 엔드포인트 (Chandra 모델 사용)
     
-    Docling과 Chandra는 같은 서버(GPU 2)에 있지만 각각 독립적으로 호출됩니다.
-    - Docling: /v1/documents/process 엔드포인트로 별도 호출 (문서 처리)
-    - Chandra: 이 엔드포인트로 호출 (OCR 처리)
-    
+    현재는 이미지 파일 업로드만 지원합니다. image_url은 미지원입니다.
     - Chandra: Hugging Face OCR 모델 (https://huggingface.co/datalab-to/chandra)
     - 출력 형식: markdown, html, json
-    
-    지원 이미지 형식: PNG, JPG, JPEG, PDF 등
+    - 지원 이미지 형식: PNG, JPG, JPEG, PDF 등
     """
     try:
         # 이미지 소스 확인
@@ -45,8 +41,7 @@ async def process_ocr(
             image_base64 = base64.b64encode(image_content).decode()
         elif image_url:
             logger.info(f"OCR request: image_url={image_url}")
-            # TODO: URL에서 이미지 다운로드 및 base64 변환
-            raise NotImplementedError("image_url processing not yet implemented")
+            raise NotImplementedError("image_url은 현재 미지원입니다. 이미지 파일을 업로드해 주세요.")
         
         # OCR 처리
         result = await service.process_ocr(

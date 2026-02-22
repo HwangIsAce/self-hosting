@@ -21,18 +21,14 @@ class DocumentService:
         file_type: Optional[str] = None,
         options: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """문서 처리"""
+        """문서 처리. 현재는 파일 업로드(file_base64)만 지원합니다."""
         if not file_base64 and not file_url:
             raise ValueError("Either file_base64 or file_url must be provided")
         
         logger.info(f"Processing document: type={file_type}")
         
-        # file_url이 제공된 경우, 나중에 클라이언트에서 처리하거나
-        # 여기서 다운로드하여 base64로 변환할 수 있음
-        # 현재는 file_base64만 지원
         if file_url:
-            # TODO: URL에서 파일 다운로드 및 base64 변환
-            raise NotImplementedError("file_url processing not yet implemented")
+            raise NotImplementedError("file_url은 현재 미지원입니다. 파일을 업로드해 주세요.")
         
         # Docling 프레임워크 Pod로 라우팅 (필요시 Chandra OCR 사용)
         result = await self.model_router.route_document_processing(

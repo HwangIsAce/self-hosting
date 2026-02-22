@@ -19,14 +19,9 @@ async def process_document(
     """
     문서 처리 엔드포인트 (Docling 엔진)
     
-    Docling과 Chandra는 같은 서버(GPU 2)에 있지만 각각 독립적으로 호출됩니다.
-    - Docling: 이 엔드포인트로 호출 (문서 처리: PDF, DOCX, TXT 등)
-    - Chandra: /v1/ocr 엔드포인트로 별도 호출 (OCR 처리)
-    
+    현재는 파일 업로드만 지원합니다. file_url은 미지원입니다.
     - Docling: 문서 처리 프레임워크 (https://docling-project.github.io/docling/)
-    - Chandra: Hugging Face OCR 모델 (https://huggingface.co/datalab-to/chandra)
-    
-    지원 파일 형식: PDF, DOCX, TXT, 이미지 등
+    - 지원 파일 형식: PDF, DOCX, TXT, 이미지 등
     """
     try:
         logger.info(f"Document processing request: filename={file.filename}, content_type={file.content_type}")
