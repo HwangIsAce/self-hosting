@@ -13,7 +13,12 @@ from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import PdfPipelineOptions
 from api.config.settings import settings
 from api.config.logging_config import get_logger
-from api.infrastructure.utils.gpu2_lock import gpu2_lock, set_current_gpu2_engine
+from api.infrastructure.utils.gpu2_lock import (
+    gpu2_lock,
+    set_current_gpu2_engine,
+    register_gpu2_engine,
+    unload_other_gpu2_engines,
+)
 
 logger = get_logger(__name__)
 
@@ -63,17 +68,25 @@ def _build_docling_pipeline_options():
 
 
 class DoclingEngine:
-    """Docling 문서 처리 엔진 (GPU 가속 지원)"""
+    """Docling 문서 처리 엔진 (GPU 가속 지원). 한 시점에 한 모델만 GPU 2에 로드."""
     
     def __init__(self):
-        pipeline_options = _build_docling_pipeline_options()
-        self.converter = DocumentConverter(
-            format_options={
-                InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)
-            }
-        )
+        self._pipeline_options = _build_docling_pipeline_options()
+        self.converter = None  # lazy init inside lock
         self._initialized = True
-        logger.info("Docling engine initialized with OCR and table extraction enabled")
+        register_gpu2_engine("docling", self._unload)
+    
+    def _unload(self) -> None:
+        """GPU 2에서 Docling 해제. 다른 엔진으로 전환 시 호출됨."""
+        self.converter = None
+        try:
+            import torch
+            gpu_id = getattr(settings, "DOCLING_GPU_ID", 2)
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except Exception:
+            pass
+        set_current_gpu2_engine(None)
     
     async def initialize(self):
         """Docling 초기화 (이미 초기화됨)"""
@@ -138,9 +151,17 @@ class DoclingEngine:
             
             logger.info(f"Processing document with Docling: type={ext}, size={len(file_data)} bytes")
             
-            # GPU 2 직렬화: 락 획득 후 Docling만 실행 (OCR/ColPali와 동시 실행 방지)
+            # GPU 2 직렬화: 락 획득 후 다른 엔진 언로드, Docling만 실행
             async with gpu2_lock:
+                unload_other_gpu2_engines(except_name="docling")
                 set_current_gpu2_engine("docling")
+                if self.converter is None:
+                    self.converter = DocumentConverter(
+                        format_options={
+                            InputFormat.PDF: PdfFormatOption(pipeline_options=self._pipeline_options)
+                        }
+                    )
+                    logger.info("Docling engine initialized with OCR and table extraction enabled")
                 try:
                     loop = asyncio.get_event_loop()
                     result = await loop.run_in_executor(

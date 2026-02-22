@@ -9,7 +9,12 @@ import asyncio
 
 from api.infrastructure.models.model_loader import ModelLoader
 from api.config.logging_config import get_logger
-from api.infrastructure.utils.gpu2_lock import gpu2_lock, set_current_gpu2_engine
+from api.infrastructure.utils.gpu2_lock import (
+    gpu2_lock,
+    set_current_gpu2_engine,
+    register_gpu2_engine,
+    unload_other_gpu2_engines,
+)
 
 # Chandra OCR 패키지 사용 시도
 try:
@@ -43,6 +48,18 @@ class OCREngine:
         cls._model_loaded = False
         cls._parse_markdown = None
     
+    @classmethod
+    def unload_class(cls):
+        """GPU 2에서 OCR 모델 해제. 다른 엔진으로 전환 시 호출됨."""
+        cls._reset_model()
+        try:
+            from api.config.settings import settings
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except Exception:
+            pass
+        set_current_gpu2_engine(None)
+    
     def __init__(
         self,
         model_name: str,
@@ -60,6 +77,7 @@ class OCREngine:
         # 모델 초기화 (최초 1회만)
         if HAS_CHANDRA_PACKAGE:
             self._ensure_model_loaded()
+        register_gpu2_engine("ocr", OCREngine.unload_class)
     
     @classmethod
     def _ensure_model_loaded(cls):
@@ -304,8 +322,9 @@ class OCREngine:
                     
                     return result
                 
-                # GPU 2 직렬화: 락 획득 후 OCR만 실행 (Docling/ColPali와 동시 실행 방지)
+                # GPU 2 직렬화: 락 획득 후 다른 엔진 언로드, OCR만 실행
                 async with gpu2_lock:
+                    unload_other_gpu2_engines(except_name="ocr")
                     set_current_gpu2_engine("ocr")
                     try:
                         loop = asyncio.get_event_loop()

@@ -5,7 +5,12 @@ import asyncio
 
 from api.config.settings import settings
 from api.config.logging_config import get_logger
-from api.infrastructure.utils.gpu2_lock import gpu2_lock, set_current_gpu2_engine
+from api.infrastructure.utils.gpu2_lock import (
+    gpu2_lock,
+    set_current_gpu2_engine,
+    register_gpu2_engine,
+    unload_other_gpu2_engines,
+)
 
 logger = get_logger(__name__)
 
@@ -36,6 +41,20 @@ class ColPaliEngine:
         self._model = None
         self._processor = None
         self._loaded = False
+        register_gpu2_engine("colpali", self._unload)
+    
+    def _unload(self) -> None:
+        """GPU 2에서 ColPali 해제. 다른 엔진으로 전환 시 호출됨."""
+        self._model = None
+        self._processor = None
+        self._loaded = False
+        try:
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except Exception:
+            pass
+        set_current_gpu2_engine(None)
 
     def _load_model(self) -> None:
         if self._loaded:
@@ -59,8 +78,9 @@ class ColPaliEngine:
     async def embed(self, images: List[Any]) -> Any:
         """문서 페이지 이미지 리스트를 임베딩으로 변환. GPU 2 직렬화 락 사용."""
         self._load_model()
-        # GPU 2 직렬화: Docling/OCR과 동시 실행 방지
+        # GPU 2 직렬화: 다른 엔진 언로드 후 ColPali만 실행
         async with gpu2_lock:
+            unload_other_gpu2_engines(except_name="colpali")
             set_current_gpu2_engine("colpali")
             try:
                 loop = asyncio.get_event_loop()
