@@ -167,14 +167,19 @@ class TestDocumentModels:
             DocumentProcessRequest()
     
     def test_document_process_response(self):
-        """DocumentProcessResponse 생성"""
+        """DocumentProcessResponse 생성 (markdown, html, json 항상 포함)"""
         response = DocumentProcessResponse(
             text="Extracted text",
+            markdown="Extracted text",
+            html="<p>Extracted text</p>",
+            json_output={"text": "Extracted text"},
             metadata={"page_count": 10},
             structure={"sections": ["Intro", "Main"]}
         )
         assert response.object == "document.process"
         assert response.text == "Extracted text"
+        assert response.markdown == "Extracted text"
+        assert response.html == "<p>Extracted text</p>"
         assert response.metadata["page_count"] == 10
 
 

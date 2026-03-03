@@ -67,12 +67,23 @@ def _build_docling_pipeline_options():
     return pipeline_options
 
 
+def _build_docling_pipeline_options_cpu():
+    """GPU 없이 CPU 전용 파이프라인 (meta tensor 에러 시 폴백용)"""
+    pipeline_options = PdfPipelineOptions()
+    pipeline_options.do_ocr = True
+    pipeline_options.do_table_structure = True
+    pipeline_options.table_structure_options.do_cell_matching = True
+    return pipeline_options
+
+
 class DoclingEngine:
     """Docling 문서 처리 엔진 (GPU 가속 지원). 한 시점에 한 모델만 GPU 2에 로드."""
     
     def __init__(self):
         self._pipeline_options = _build_docling_pipeline_options()
+        self._pipeline_options_cpu = _build_docling_pipeline_options_cpu()
         self.converter = None  # lazy init inside lock
+        self._use_cpu_fallback = False  # meta tensor 발생 시 True로 전환
         self._initialized = True
         register_gpu2_engine("docling", self._unload)
     
@@ -152,16 +163,21 @@ class DoclingEngine:
             logger.info(f"Processing document with Docling: type={ext}, size={len(file_data)} bytes")
             
             # GPU 2 직렬화: 락 획득 후 다른 엔진 언로드, Docling만 실행
+            retry_with_cpu = False
             async with gpu2_lock:
                 unload_other_gpu2_engines(except_name="docling")
                 set_current_gpu2_engine("docling")
+                pipeline_opts = self._pipeline_options_cpu if self._use_cpu_fallback else self._pipeline_options
                 if self.converter is None:
                     self.converter = DocumentConverter(
                         format_options={
-                            InputFormat.PDF: PdfFormatOption(pipeline_options=self._pipeline_options)
+                            InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_opts)
                         }
                     )
-                    logger.info("Docling engine initialized with OCR and table extraction enabled")
+                    logger.info(
+                        "Docling engine initialized with OCR and table extraction (%s)",
+                        "CPU fallback" if self._use_cpu_fallback else "enabled",
+                    )
                 try:
                     loop = asyncio.get_event_loop()
                     result = await loop.run_in_executor(
@@ -171,8 +187,21 @@ class DoclingEngine:
                         options
                     )
                     return result
+                except NotImplementedError as e:
+                    if "meta tensor" in str(e).lower() or "to_empty" in str(e).lower():
+                        logger.warning(
+                            "Docling GPU pipeline failed (meta tensor), will retry with CPU: %s",
+                            str(e)[:200],
+                        )
+                        self.converter = None
+                        self._use_cpu_fallback = True
+                        retry_with_cpu = True
+                    else:
+                        raise
                 finally:
                     set_current_gpu2_engine(None)
+            if retry_with_cpu:
+                return await self.process_document(file_base64=file_base64, file_type=file_type, options=options)
             
         except Exception as e:
             logger.exception(f"Error processing document: {str(e)}")
@@ -186,21 +215,23 @@ class DoclingEngine:
                     logger.warning(f"Failed to delete temp file: {e}")
     
     async def _process_txt(self, file_data: bytes, options: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-        """TXT 처리 (Docling이 지원하지 않으므로 직접 처리)"""
+        """TXT 처리 (Docling이 지원하지 않으므로 직접 처리) - markdown, html, json 모두 반환"""
         try:
             text = file_data.decode("utf-8")
-        except:
+        except Exception:
             try:
                 text = file_data.decode("latin-1")
-            except:
+            except Exception:
                 text = file_data.decode("utf-8", errors="ignore")
-        
+        import html as html_module
+        escaped = html_module.escape(text)
         return {
             "text": text,
-            "metadata": {
-                "file_type": "txt"
-            },
-            "structure": {}
+            "markdown": text,
+            "html": f"<pre>{escaped}</pre>",
+            "json": {"text": text, "metadata": {"file_type": "txt"}},
+            "metadata": {"file_type": "txt"},
+            "structure": {},
         }
     
     def _convert_document(
@@ -208,44 +239,58 @@ class DoclingEngine:
         file_path: str,
         options: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """Docling으로 문서 변환 (동기 함수)"""
+        """Docling으로 문서 변환 (동기 함수) - 항상 markdown, html, json 반환"""
         try:
-            # 문서 변환
             result = self.converter.convert(file_path)
-            
-            # 변환 결과 추출
             doc = result.document
-            
-            # Markdown으로 내보내기
+
             markdown_text = doc.export_to_markdown()
-            
-            # 메타데이터 수집
+
+            # HTML 내보내기 (DoclingDocument.export_to_html)
+            html_text = ""
+            if hasattr(doc, "export_to_html") and callable(doc.export_to_html):
+                try:
+                    html_text = doc.export_to_html()
+                except Exception as e:
+                    logger.warning(f"Docling export_to_html failed: {e}, using fallback")
+                    html_text = f"<pre>{markdown_text}</pre>" if markdown_text else ""
+            else:
+                html_text = f"<pre>{markdown_text}</pre>" if markdown_text else ""
+
+            # JSON 내보내기 (DoclingDocument.export_to_dict)
+            json_data = {}
+            if hasattr(doc, "export_to_dict") and callable(doc.export_to_dict):
+                try:
+                    json_data = doc.export_to_dict()
+                except Exception as e:
+                    logger.warning(f"Docling export_to_dict failed: {e}, using fallback")
+                    json_data = {"text": markdown_text, "markdown": markdown_text}
+            else:
+                json_data = {"text": markdown_text, "markdown": markdown_text}
+
             metadata = {
                 "file_type": Path(file_path).suffix[1:] if Path(file_path).suffix else "unknown",
-                "pages": len(doc.pages) if hasattr(doc, 'pages') and doc.pages else 1,
+                "pages": len(doc.pages) if hasattr(doc, "pages") and doc.pages else 1,
             }
-            
-            # 문서 제목이 있으면 추가
-            if hasattr(doc, 'title') and doc.title:
+            if hasattr(doc, "title") and doc.title:
                 metadata["title"] = doc.title
-            
-            # 구조 정보 수집
+
             structure = {}
-            
-            # 표 정보 추출
-            if hasattr(doc, 'tables') and doc.tables:
+            if hasattr(doc, "tables") and doc.tables:
                 structure["tables"] = len(doc.tables)
-            
-            # 이미지 정보 추출
-            if hasattr(doc, 'images') and doc.images:
+            if hasattr(doc, "pictures") and doc.pictures:
+                structure["pictures"] = len(doc.pictures)
+            elif hasattr(doc, "images") and doc.images:
                 structure["images"] = len(doc.images)
-            
+
             return {
                 "text": markdown_text,
+                "markdown": markdown_text,
+                "html": html_text,
+                "json": json_data,
                 "metadata": metadata,
-                "structure": structure
+                "structure": structure,
             }
-            
         except Exception as e:
             logger.error(f"Docling conversion failed: {str(e)}")
             raise

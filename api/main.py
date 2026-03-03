@@ -110,8 +110,17 @@ async def root():
 
 @app.get("/health")
 async def health():
-    """헬스체크 엔드포인트"""
-    return {"status": "healthy"}
+    """헬스체크 엔드포인트 (OCR 모델 로드 여부 포함)"""
+    ocr_model_loaded = False
+    try:
+        from api.infrastructure.models.ocr_engine import OCREngine
+        ocr_model_loaded = (
+            OCREngine._model is not None
+            and getattr(OCREngine, "_model_loaded", False)
+        )
+    except Exception:
+        pass
+    return {"status": "healthy", "ocr_model_loaded": ocr_model_loaded}
 
 
 if __name__ == "__main__":

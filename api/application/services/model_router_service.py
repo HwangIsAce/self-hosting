@@ -211,23 +211,18 @@ class ModelRouterService:
         self,
         image_base64: str,
         prompt_type: Optional[str] = "ocr_layout",
-        output_format: Optional[str] = "markdown",
         max_tokens: int = 1024
     ) -> Dict[str, Any]:
         """
-        OCR 처리 요청을 로컬 Chandra OCR 엔진으로 라우팅
-        
-        Docling과 Chandra는 같은 서버(GPU 2)에 있지만 각각 독립적으로 호출됩니다.
-        - Docling: 문서 처리 (별도 엔드포인트 /v1/documents/process로 호출)
-        - Chandra: OCR 처리 (이 엔드포인트)
+        OCR 처리 요청을 로컬 Chandra OCR 엔진으로 라우팅.
+        항상 markdown, html, json 세 가지 형식을 모두 반환합니다.
         """
         engine = self._get_engine("ocr")
-        
+
         logger.info("Routing OCR processing to local Chandra OCR engine (independent from Docling)")
-        
+
         return await engine.process(
             image_base64=image_base64,
             prompt_type=prompt_type,
-            output_format=output_format,
             max_tokens=max_tokens
         )

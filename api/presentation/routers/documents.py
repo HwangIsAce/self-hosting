@@ -42,6 +42,9 @@ async def process_document(
             id=f"doc-{uuid.uuid4().hex[:8]}",
             created=int(datetime.now().timestamp()),
             text=result.get("text", ""),
+            markdown=result.get("markdown", ""),
+            html=result.get("html", ""),
+            json_output=result.get("json", {}),
             metadata=result.get("metadata"),
             structure=result.get("structure")
         )
@@ -50,4 +53,4 @@ async def process_document(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.exception(f"Unexpected error in document processing: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Internal error: {str(e)[:200]}")

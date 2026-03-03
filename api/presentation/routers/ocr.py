@@ -17,23 +17,19 @@ async def process_ocr(
     image: Optional[UploadFile] = File(None),
     image_url: Optional[str] = Form(None),
     prompt_type: Optional[str] = Form("ocr_layout"),
-    output_format: Optional[str] = Form("markdown"),
-    max_tokens: Optional[int] = Form(1024),  # OCR에 적합한 기본값 (정확도와 속도의 균형)
+    max_tokens: Optional[int] = Form(1024),
     service: OCRService = Depends(get_ocr_service)
 ) -> OCRResponse:
     """
     OCR 엔드포인트 (Chandra 모델 사용)
-    
-    현재는 이미지 파일 업로드만 지원합니다. image_url은 미지원입니다.
+    항상 markdown, html, json 세 가지 형식을 모두 반환합니다.
     - Chandra: Hugging Face OCR 모델 (https://huggingface.co/datalab-to/chandra)
-    - 출력 형식: markdown, html, json
     - 지원 이미지 형식: PNG, JPG, JPEG, PDF 등
     """
     try:
-        # 이미지 소스 확인
         if not image and not image_url:
             raise ValueError("Either image file or image_url must be provided")
-        
+
         image_base64 = None
         if image:
             logger.info(f"OCR request: filename={image.filename}, content_type={image.content_type}")
@@ -42,24 +38,20 @@ async def process_ocr(
         elif image_url:
             logger.info(f"OCR request: image_url={image_url}")
             raise NotImplementedError("image_url은 현재 미지원입니다. 이미지 파일을 업로드해 주세요.")
-        
-        # OCR 처리
+
         result = await service.process_ocr(
             image_base64=image_base64,
             image_url=image_url,
             prompt_type=prompt_type,
-            output_format=output_format,
             max_tokens=max_tokens or 1024
         )
-        
-        # 응답 생성
+
         return OCRResponse(
             id=f"ocr-{uuid.uuid4().hex[:8]}",
             created=int(datetime.now().timestamp()),
-            text=result.get("text"),
-            markdown=result.get("markdown") if output_format == "markdown" else None,
-            html=result.get("html") if output_format == "html" else None,
-            json_output=result.get("json") if output_format == "json" else None,
+            markdown=result["markdown"],
+            html=result["html"],
+            json_output=result["json"],
             metadata=result.get("metadata")
         )
     except ValueError as e:

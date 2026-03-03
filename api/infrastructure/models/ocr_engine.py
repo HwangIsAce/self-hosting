@@ -104,10 +104,10 @@ class OCREngine:
                 from api.config.settings import settings
                 cls._device_map = f"cuda:{settings.OCR_GPU_ID}"
             
-            # 모델 로드 옵션
+            # 모델 로드 옵션 (float32: processor 출력과 dtype 일치로 mat1/mat2 에러 방지)
             model_kwargs = {
                 "trust_remote_code": True,
-                "torch_dtype": torch.bfloat16,  # torch.float16은 logits가 nan이 되는 문제가 있으므로 bfloat16 사용
+                "torch_dtype": torch.float32,
             }
             
             # Qwen3VLForConditionalGeneration을 사용해야 generate 메서드가 있음
@@ -171,15 +171,22 @@ class OCREngine:
         self,
         image_base64: str,
         prompt_type: str = "ocr_layout",
-        output_format: str = "markdown",
         max_tokens: int = 1024  # OCR에 적합한 기본값 (정확도와 속도의 균형)
     ) -> Dict[str, Any]:
-        """OCR 처리 - 사용자 코드와 동일한 방식"""
+        """OCR 처리 - 항상 markdown, html, json 세 가지 형식을 모두 반환"""
+        # Docling 등으로 언로드된 경우 Chandra 모델 재로드
+        if HAS_CHANDRA_PACKAGE and (OCREngine._model is None or not OCREngine._model_loaded):
+            try:
+                OCREngine._ensure_model_loaded()
+                logger.info("Chandra OCR model (re)loaded for request")
+            except Exception as e:
+                logger.warning("Chandra model (re)load failed, will use manual fallback: %s", e)
+
         # Base64 이미지 디코딩
         image = await self._decode_base64_image(image_base64)
         if not image:
             raise ValueError("Failed to decode image")
-        
+
         # 성능 최적화: 큰 이미지는 적절한 크기로 리사이즈
         # 표 인식 정확도를 위해 최대 크기를 2048px로 증가
         # 1024px로 리사이즈하면 표의 세부 내용이 손실되어 "보내보내보내..." 같은 반복 텍스트 발생
@@ -246,17 +253,26 @@ class OCREngine:
                             return_tensors="pt",
                             padding_side="left",
                         )
-                        # 모델의 실제 디바이스로 이동 (원래는 .to("cuda")로 하드코딩됨)
-                        # inputs 딕셔너리의 모든 텐서를 명시적으로 디바이스로 이동
+                        # 모델의 실제 디바이스로 이동 + 모델과 동일한 dtype으로 캐스팅 (float vs bfloat16 불일치 방지)
+                        model_dtype = next(model.parameters()).dtype
                         if isinstance(inputs, dict):
-                            inputs = {k: v.to(device) if isinstance(v, torch.Tensor) else v 
-                                     for k, v in inputs.items()}
+                            def _to_device_and_dtype(v):
+                                if not isinstance(v, torch.Tensor):
+                                    return v
+                                v = v.to(device)
+                                # float 계열 텐서는 모델 dtype과 맞춤
+                                if v.is_floating_point() and v.dtype != model_dtype:
+                                    v = v.to(model_dtype)
+                                return v
+                            inputs = {k: _to_device_and_dtype(v) for k, v in inputs.items()}
                         else:
                             inputs = inputs.to(device)
+                            if hasattr(inputs, "is_floating_point") and inputs.is_floating_point() and inputs.dtype != model_dtype:
+                                inputs = inputs.to(model_dtype)
                         
                         # 성능 최적화: 불필요한 로깅 제거
                         if logger.level <= 10:  # DEBUG level
-                            logger.debug(f"Inputs moved to device {device}, input_ids device: {inputs['input_ids'].device if 'input_ids' in inputs else 'N/A'}")
+                            logger.debug(f"Inputs moved to device {device}, dtype {model_dtype}, input_ids device: {inputs['input_ids'].device if isinstance(inputs, dict) and 'input_ids' in inputs else 'N/A'}")
                         
                         # Inference: Generation of the output
                         # 원본 generate_hf와 동일하지만 do_sample=False로 greedy decoding 사용
@@ -354,17 +370,16 @@ class OCREngine:
                         # 파싱 실패 시 raw 출력을 그대로 사용
                         markdown = result.raw
                 
-                # HTML 태그가 포함된 Markdown 형식
+                # Markdown -> HTML 변환 (markdown 라이브러리 사용)
+                try:
+                    import markdown as md_lib
+                    html = md_lib.markdown(markdown) if markdown else ""
+                    if html and not html.strip().startswith("<"):
+                        html = f"<p>{html}</p>"
+                except ImportError:
+                    html = f"<pre>{markdown}</pre>" if markdown else ""
                 
-                # 출력 형식에 따라 텍스트 추출
-                if output_format == "markdown":
-                    text = markdown
-                else:
-                    # HTML 태그 제거하여 순수 텍스트 추출
-                    import re
-                    text = re.sub(r'<[^>]+>', '', markdown) if markdown else ""
-                
-                logger.info(f"OCR completed. Text length: {len(text)}")
+                logger.info(f"OCR completed. Markdown length: {len(markdown)}")
                 
             except Exception as e:
                 logger.error(f"Chandra OCR processing failed: {e}")
@@ -382,38 +397,32 @@ class OCREngine:
                 raise
         else:
             # 수동 처리 (fallback)
-            text = await self._process_manual(image, prompt_type, output_format)
-        
-        # 출력 형식에 따라 포맷팅
-        result = {
-            "text": text,
-            "metadata": {
-                "prompt_type": prompt_type,
-                "output_format": output_format,
-                "parser": "chandra" if HAS_CHANDRA_PACKAGE and OCREngine._model is not None else "manual"
-            }
+            markdown = await self._process_manual(image, prompt_type)
+            html = f"<pre>{markdown}</pre>" if markdown else ""
+
+        metadata = {
+            "prompt_type": prompt_type,
+            "parser": "chandra" if HAS_CHANDRA_PACKAGE and OCREngine._model is not None else "manual"
         }
-        
-        if output_format == "markdown":
-            result["markdown"] = text
-        elif output_format == "html":
-            result["html"] = text if "<" in text else f"<p>{text}</p>"
-        elif output_format == "json":
-            result["json"] = {"text": text}
-        
-        return result
+        return {
+            "markdown": markdown if HAS_CHANDRA_PACKAGE and OCREngine._model is not None else (markdown or ""),
+            "html": html,
+            "json": {
+                "markdown": markdown if HAS_CHANDRA_PACKAGE and OCREngine._model is not None else (markdown or ""),
+                "html": html,
+                "metadata": metadata
+            },
+            "metadata": metadata
+        }
     
     async def _process_manual(
         self,
         image: Image.Image,
-        prompt_type: str,
-        output_format: str
+        prompt_type: str
     ) -> str:
         """수동 OCR 처리 (fallback)"""
-        # Chandra는 Qwen3VL 기반이므로 특별한 처리가 필요할 수 있음
-        # 현재는 간단한 fallback만 제공
         logger.warning("Using manual OCR processing (chandra-ocr package recommended)")
-        return "OCR processing requires chandra-ocr package. Please install with: pip install chandra-ocr"
+        return "OCR processing requires chandra-ocr package. Install with: pip install chandra-ocr"
     
     async def _decode_base64_image(self, base64_str: str) -> Optional[Image.Image]:
         """Base64 문자열에서 이미지 디코딩"""
