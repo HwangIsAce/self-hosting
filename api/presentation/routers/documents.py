@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
+from fastapi.encoders import jsonable_encoder
 from api.domain.models.documents import DocumentProcessResponse
 from api.application.services.document_service import DocumentService
 from api.presentation.dependencies.get_services import get_document_service
@@ -37,16 +38,16 @@ async def process_document(
             file_type=file_type
         )
         
-        # 응답 생성
+        # 응답 생성 (json/metadata/structure는 JSON 직렬화 가능하도록 보정)
         return DocumentProcessResponse(
             id=f"doc-{uuid.uuid4().hex[:8]}",
             created=int(datetime.now().timestamp()),
             text=result.get("text", ""),
             markdown=result.get("markdown", ""),
             html=result.get("html", ""),
-            json_output=result.get("json", {}),
-            metadata=result.get("metadata"),
-            structure=result.get("structure")
+            json_output=jsonable_encoder(result.get("json", {})),
+            metadata=jsonable_encoder(result.get("metadata")) if result.get("metadata") is not None else None,
+            structure=jsonable_encoder(result.get("structure")) if result.get("structure") is not None else None
         )
     except ValueError as e:
         logger.warning(f"Invalid request: {str(e)}")

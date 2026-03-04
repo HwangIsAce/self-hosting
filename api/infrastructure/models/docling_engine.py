@@ -23,6 +23,26 @@ from api.infrastructure.utils.gpu2_lock import (
 logger = get_logger(__name__)
 
 
+def _json_safe_string(s: str) -> str:
+    """JSON 직렬화 시 'unterminated string literal' 등을 방지하기 위해 문자열 보정.
+    널 바이트·제어 문자 제거, UTF-8 정규화."""
+    if not isinstance(s, str):
+        return str(s)
+    s = s.replace("\x00", "")
+    return s.encode("utf-8", errors="replace").decode("utf-8")
+
+
+def _json_safe_value(v: Any) -> Any:
+    """dict/list 내부의 모든 문자열을 JSON-safe하게 보정."""
+    if isinstance(v, str):
+        return _json_safe_string(v)
+    if isinstance(v, dict):
+        return {k: _json_safe_value(x) for k, x in v.items()}
+    if isinstance(v, list):
+        return [_json_safe_value(x) for x in v]
+    return v
+
+
 def _build_docling_pipeline_options():
     """Docling 파이프라인 옵션 생성 (GPU 사용 시 AcceleratorOptions 및 배치 크기 적용)"""
     use_gpu = getattr(settings, "DOCLING_USE_GPU", False)
@@ -245,6 +265,7 @@ class DoclingEngine:
             doc = result.document
 
             markdown_text = doc.export_to_markdown()
+            markdown_text = _json_safe_string(markdown_text or "")
 
             # HTML 내보내기 (DoclingDocument.export_to_html)
             html_text = ""
@@ -256,6 +277,7 @@ class DoclingEngine:
                     html_text = f"<pre>{markdown_text}</pre>" if markdown_text else ""
             else:
                 html_text = f"<pre>{markdown_text}</pre>" if markdown_text else ""
+            html_text = _json_safe_string(html_text)
 
             # JSON 내보내기 (DoclingDocument.export_to_dict)
             json_data = {}
@@ -267,6 +289,7 @@ class DoclingEngine:
                     json_data = {"text": markdown_text, "markdown": markdown_text}
             else:
                 json_data = {"text": markdown_text, "markdown": markdown_text}
+            json_data = _json_safe_value(json_data)
 
             metadata = {
                 "file_type": Path(file_path).suffix[1:] if Path(file_path).suffix else "unknown",

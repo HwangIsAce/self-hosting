@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form
+from fastapi.encoders import jsonable_encoder
 from api.domain.models.ocr import OCRRequest, OCRResponse
 from api.application.services.ocr_service import OCRService
 from api.presentation.dependencies.get_services import get_ocr_service
@@ -51,8 +52,8 @@ async def process_ocr(
             created=int(datetime.now().timestamp()),
             markdown=result["markdown"],
             html=result["html"],
-            json_output=result["json"],
-            metadata=result.get("metadata")
+            json_output=jsonable_encoder(result["json"]),
+            metadata=jsonable_encoder(result["metadata"]) if result.get("metadata") is not None else None
         )
     except ValueError as e:
         logger.warning(f"Invalid request: {str(e)}")
