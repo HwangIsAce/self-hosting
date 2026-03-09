@@ -254,6 +254,12 @@ class VLLMEngine:
         except asyncio.TimeoutError:
             elapsed = time.time() - start_time
             logger.error(f"vLLM generation timeout after {elapsed:.2f}s")
+            # 좀비 태스크 방지: vLLM 엔진에서 해당 요청 abort
+            try:
+                await self.llm.abort(request_id)
+                logger.info(f"Aborted timed-out vLLM request: {request_id}")
+            except Exception as abort_err:
+                logger.warning(f"Failed to abort request {request_id}: {abort_err}")
             raise RuntimeError(f"vLLM generation timeout after {timeout}s")
         except Exception as e:
             elapsed = time.time() - start_time
@@ -438,6 +444,11 @@ class VLLMEngine:
                     }
                 }
         except asyncio.TimeoutError:
+            try:
+                await self.llm.abort(request_id)
+                logger.info(f"Aborted timed-out batch request: {request_id}")
+            except Exception as abort_err:
+                logger.warning(f"Failed to abort batch request {request_id}: {abort_err}")
             raise RuntimeError(f"vLLM generation timeout for {request_id}")
         except Exception as e:
             if allow_partial_failure:
