@@ -184,7 +184,7 @@ class DoclingEngine:
             
             # GPU 2 직렬화: 락 획득 후 다른 엔진 언로드, Docling만 실행
             retry_with_cpu = False
-            async with gpu2_lock:
+            async with gpu2_lock():
                 unload_other_gpu2_engines(except_name="docling")
                 set_current_gpu2_engine("docling")
                 pipeline_opts = self._pipeline_options_cpu if self._use_cpu_fallback else self._pipeline_options

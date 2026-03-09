@@ -339,7 +339,7 @@ class OCREngine:
                     return result
                 
                 # GPU 2 직렬화: 락 획득 후 다른 엔진 언로드, OCR만 실행
-                async with gpu2_lock:
+                async with gpu2_lock():
                     unload_other_gpu2_engines(except_name="ocr")
                     set_current_gpu2_engine("ocr")
                     try:

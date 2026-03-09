@@ -79,7 +79,7 @@ class ColPaliEngine:
         """문서 페이지 이미지 리스트를 임베딩으로 변환. GPU 2 직렬화 락 사용."""
         self._load_model()
         # GPU 2 직렬화: 다른 엔진 언로드 후 ColPali만 실행
-        async with gpu2_lock:
+        async with gpu2_lock():
             unload_other_gpu2_engines(except_name="colpali")
             set_current_gpu2_engine("colpali")
             try:
