@@ -35,6 +35,12 @@ async def process_ocr(
         if image:
             logger.info(f"OCR request: filename={image.filename}, content_type={image.content_type}")
             image_content = await image.read()
+            max_upload_bytes = 20 * 1024 * 1024  # 20MB
+            if len(image_content) > max_upload_bytes:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"Image too large: {len(image_content)} bytes. Maximum allowed: {max_upload_bytes} bytes (20MB)."
+                )
             image_base64 = base64.b64encode(image_content).decode()
         elif image_url:
             logger.info(f"OCR request: image_url={image_url}")
