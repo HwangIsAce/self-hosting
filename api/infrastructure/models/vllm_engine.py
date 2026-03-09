@@ -305,11 +305,24 @@ class VLLMEngine:
         """
         if not self._loaded:
             self.load_model()
-        
+
+        # 배치 크기 사전 검증
+        max_seqs = settings.VLLM_MAX_NUM_SEQS
+        if len(messages_list) > max_seqs * 2:
+            raise ValueError(
+                f"Batch too large: {len(messages_list)} requests. "
+                f"Maximum recommended: {max_seqs * 2} (2x VLLM_MAX_NUM_SEQS={max_seqs})."
+            )
+
         start_time = time.time()
         timeout = timeout or self.default_timeout
         chunk_size = chunk_size or getattr(settings, 'BATCH_CHUNK_SIZE', None)
-        
+
+        # chunk_size 미지정 시 max_seqs 기준으로 자동 설정
+        if not chunk_size and len(messages_list) > max_seqs:
+            chunk_size = max_seqs
+            logger.info(f"Auto-chunking batch: {len(messages_list)} requests into chunks of {chunk_size}")
+
         # 대량 배치는 청크로 나누기
         if chunk_size and len(messages_list) > chunk_size:
             logger.info(
