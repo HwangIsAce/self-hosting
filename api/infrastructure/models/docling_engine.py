@@ -183,45 +183,26 @@ class DoclingEngine:
             logger.info(f"Processing document with Docling: type={ext}, size={len(file_data)} bytes")
             
             # GPU 2 직렬화: 락 획득 후 다른 엔진 언로드, Docling만 실행
-            retry_with_cpu = False
             async with gpu2_lock():
                 unload_other_gpu2_engines(except_name="docling")
                 set_current_gpu2_engine("docling")
-                pipeline_opts = self._pipeline_options_cpu if self._use_cpu_fallback else self._pipeline_options
-                if self.converter is None:
-                    self.converter = DocumentConverter(
-                        format_options={
-                            InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_opts)
-                        }
-                    )
-                    logger.info(
-                        "Docling engine initialized with OCR and table extraction (%s)",
-                        "CPU fallback" if self._use_cpu_fallback else "enabled",
-                    )
                 try:
-                    loop = asyncio.get_event_loop()
-                    result = await loop.run_in_executor(
-                        None,
-                        self._convert_document,
-                        temp_file,
-                        options
-                    )
+                    result = await self._run_conversion(temp_file, options)
                     return result
                 except NotImplementedError as e:
-                    if "meta tensor" in str(e).lower() or "to_empty" in str(e).lower():
-                        logger.warning(
-                            "Docling GPU pipeline failed (meta tensor), will retry with CPU: %s",
-                            str(e)[:200],
-                        )
-                        self.converter = None
-                        self._use_cpu_fallback = True
-                        retry_with_cpu = True
-                    else:
+                    if "meta tensor" not in str(e).lower() and "to_empty" not in str(e).lower():
                         raise
+                    # CPU 폴백 1회 시도 (재귀 없음)
+                    logger.warning(
+                        "Docling GPU pipeline failed (meta tensor), retrying with CPU: %s",
+                        str(e)[:200],
+                    )
+                    self.converter = None
+                    self._use_cpu_fallback = True
+                    result = await self._run_conversion(temp_file, options)
+                    return result
                 finally:
                     set_current_gpu2_engine(None)
-            if retry_with_cpu:
-                return await self.process_document(file_base64=file_base64, file_type=file_type, options=options)
             
         except Exception as e:
             logger.exception(f"Error processing document: {str(e)}")
@@ -234,6 +215,26 @@ class DoclingEngine:
                 except Exception as e:
                     logger.warning(f"Failed to delete temp file: {e}")
     
+    async def _run_conversion(self, temp_file: str, options: Dict[str, Any]) -> Dict[str, Any]:
+        """락 내부에서 converter 초기화 + 변환 실행. 매 호출마다 새 converter 생성."""
+        pipeline_opts = self._pipeline_options_cpu if self._use_cpu_fallback else self._pipeline_options
+        self.converter = DocumentConverter(
+            format_options={
+                InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_opts)
+            }
+        )
+        logger.info(
+            "Docling converter created (%s)",
+            "CPU fallback" if self._use_cpu_fallback else "GPU",
+        )
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            None,
+            self._convert_document,
+            temp_file,
+            options,
+        )
+
     async def _process_txt(self, file_data: bytes, options: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         """TXT 처리 (Docling이 지원하지 않으므로 직접 처리) - markdown, html, json 모두 반환"""
         try:
