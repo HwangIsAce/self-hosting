@@ -20,6 +20,7 @@ from api.presentation.middleware.error_handler import (
     general_exception_handler
 )
 from api.presentation.middleware.logging import LoggingMiddleware
+from api.presentation.middleware.auth import APIKeyAuthMiddleware
 from api.config.settings import settings
 from api.config.logging_config import setup_logging
 # RunPod 클라이언트는 선택사항 (원격 Pod 사용 시)
@@ -74,6 +75,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# 인증 미들웨어 (CORS 다음, 로깅 이전)
+app.add_middleware(APIKeyAuthMiddleware)
 
 # 로깅 미들웨어
 app.add_middleware(LoggingMiddleware)

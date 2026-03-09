@@ -82,6 +82,9 @@ class Settings(BaseSettings):
         "qwen-vlm-14b": "vlm",
     }
     
+    # API Key 인증 (빈 리스트 = 인증 비활성화)
+    API_KEYS: List[str] = []
+
     # CORS 설정
     CORS_ORIGINS: List[str] = ["*"]
     
