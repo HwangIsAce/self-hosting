@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     COLPALI_MODEL_NAME: str = "vidore/colpali-v1.3-hf"
     COLPALI_GPU_ID: int = 2  # Docling/OCR과 동일 GPU, gpu2_lock으로 직렬 사용
     
+    # 시작 시 모델 프리로딩 (True = 서버 시작 시 모델 미리 로드)
+    PRELOAD_LLM: bool = False
+    PRELOAD_VLM: bool = False
+
     # 모델 옵션
     USE_QUANTIZATION: bool = False  # 양자화 사용 여부
     LOAD_IN_8BIT: bool = False

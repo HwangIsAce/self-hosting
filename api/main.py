@@ -48,8 +48,28 @@ async def lifespan(app: FastAPI):
         logger.info(f"VLM Model: {settings.VLM_MODEL_NAME} on GPU {settings.VLM_GPU_ID}")
         logger.info(f"OCR Model: {settings.OCR_MODEL_NAME} on GPU {settings.OCR_GPU_ID}")
         
-        # 모델은 첫 요청 시 lazy loading (메모리 절약)
-        logger.info("Models will be loaded on first request")
+        # 프리로딩 설정에 따라 모델 미리 로드
+        if settings.PRELOAD_LLM or settings.PRELOAD_VLM:
+            from api.presentation.dependencies.get_services import get_model_router_service
+            router = get_model_router_service()
+            if settings.PRELOAD_LLM:
+                try:
+                    logger.info("Pre-loading LLM model...")
+                    engine = router._get_engine("llm")
+                    engine.load_model()
+                    logger.info("LLM model pre-loaded successfully")
+                except Exception as e:
+                    logger.error(f"LLM pre-load failed (will retry on first request): {e}")
+            if settings.PRELOAD_VLM:
+                try:
+                    logger.info("Pre-loading VLM model...")
+                    engine = router._get_engine("vlm")
+                    engine.load_model()
+                    logger.info("VLM model pre-loaded successfully")
+                except Exception as e:
+                    logger.error(f"VLM pre-load failed (will retry on first request): {e}")
+        else:
+            logger.info("Models will be loaded on first request")
     except Exception as e:
         logger.warning(f"Could not initialize model settings: {str(e)}")
 
