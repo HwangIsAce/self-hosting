@@ -62,7 +62,7 @@ echo -e "${GREEN}API: http://0.0.0.0:8000  (docs: http://0.0.0.0:8000/docs)${NC}
 echo ""
 
 if command -v uv &>/dev/null; then
-  exec uv run uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
+  exec uv run uvicorn api.main:app --host 0.0.0.0 --port 8000 --timeout-keep-alive 65
 else
-  exec uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
+  exec uvicorn api.main:app --host 0.0.0.0 --port 8000 --timeout-keep-alive 65
 fi
