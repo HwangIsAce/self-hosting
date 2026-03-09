@@ -201,8 +201,7 @@ class DoclingEngine:
                     self._use_cpu_fallback = True
                     result = await self._run_conversion(temp_file, options)
                     return result
-                finally:
-                    set_current_gpu2_engine(None)
+                # 엔진 식별자를 "docling"으로 유지 (연속 문서 요청 시 재로드 방지)
             
         except Exception as e:
             logger.exception(f"Error processing document: {str(e)}")

@@ -82,15 +82,13 @@ class ColPaliEngine:
         async with gpu2_lock():
             unload_other_gpu2_engines(except_name="colpali")
             set_current_gpu2_engine("colpali")
-            try:
-                loop = asyncio.get_event_loop()
-                embeddings = await loop.run_in_executor(
-                    None,
-                    _embed_images_sync,
-                    images,
-                    self._model,
-                    self._processor,
-                )
-                return embeddings
-            finally:
-                set_current_gpu2_engine(None)
+            loop = asyncio.get_event_loop()
+            embeddings = await loop.run_in_executor(
+                None,
+                _embed_images_sync,
+                images,
+                self._model,
+                self._processor,
+            )
+            # 엔진 식별자를 "colpali"로 유지 (연속 요청 시 재로드 방지)
+            return embeddings

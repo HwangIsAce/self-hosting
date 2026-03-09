@@ -339,11 +339,9 @@ class OCREngine:
                     if OCREngine._model is None or not OCREngine._model_loaded:
                         OCREngine._ensure_model_loaded()
                         logger.info("Chandra OCR model (re)loaded inside gpu2_lock")
-                    try:
-                        loop = asyncio.get_event_loop()
-                        result = await loop.run_in_executor(None, generate_ocr)
-                    finally:
-                        set_current_gpu2_engine(None)
+                    loop = asyncio.get_event_loop()
+                    result = await loop.run_in_executor(None, generate_ocr)
+                    # 엔진 식별자를 "ocr"로 유지 (연속 OCR 요청 시 재로드 방지)
                 
                 # 디버깅: raw 출력 확인
                 logger.info(f"OCR raw output length: {len(result.raw) if result.raw else 0}")
