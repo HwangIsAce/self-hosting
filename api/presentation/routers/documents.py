@@ -27,13 +27,13 @@ async def process_document(
     try:
         logger.info(f"Document processing request: filename={file.filename}, content_type={file.content_type}")
         
-        # 파일 읽기 + 크기 제한 (50MB)
+        # 파일 읽기 + 크기 제한 (500MB)
         file_content = await file.read()
-        max_upload_bytes = 50 * 1024 * 1024  # 50MB
+        max_upload_bytes = 500 * 1024 * 1024  # 500MB
         if len(file_content) > max_upload_bytes:
             raise HTTPException(
                 status_code=413,
-                detail=f"File too large: {len(file_content)} bytes. Maximum allowed: {max_upload_bytes} bytes (50MB)."
+                detail=f"File too large: {len(file_content)} bytes. Maximum allowed: {max_upload_bytes} bytes (500MB)."
             )
         file_base64 = base64.b64encode(file_content).decode()
         file_type = file.filename.split(".")[-1] if file.filename else None
