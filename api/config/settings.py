@@ -95,6 +95,9 @@ class Settings(BaseSettings):
     ENABLE_CACHE: bool = False
     CACHE_URL: Optional[str] = None
     
+    # 유휴 자동 정리 (초, 0 = 비활성화)
+    IDLE_UNLOAD_SECONDS: int = 0
+
     # 배치 처리 설정
     BATCH_MAX_REQUESTS: int = 100  # 배치 최대 요청 수
     BATCH_CHUNK_SIZE: Optional[int] = None  # 대량 배치 청크 크기 (None = 자동)

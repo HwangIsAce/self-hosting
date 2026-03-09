@@ -23,6 +23,7 @@ from api.presentation.middleware.logging import LoggingMiddleware
 from api.presentation.middleware.auth import APIKeyAuthMiddleware
 from api.config.settings import settings
 from api.config.logging_config import setup_logging
+from api.infrastructure.utils.idle_watcher import idle_watcher_loop
 # RunPod 클라이언트는 선택사항 (원격 Pod 사용 시)
 # from api.infrastructure.clients.runpod_client import RunPodClientFactory
 from fastapi.exceptions import RequestValidationError
@@ -51,8 +52,13 @@ async def lifespan(app: FastAPI):
         logger.info("Models will be loaded on first request")
     except Exception as e:
         logger.warning(f"Could not initialize model settings: {str(e)}")
-    
+
+    # 유휴 감지 백그라운드 태스크 시작
+    idle_task = asyncio.create_task(idle_watcher_loop())
+
     yield
+
+    idle_task.cancel()
     
     # Shutdown: 모델 정리
     logger.info("Shutting down API Gateway...")

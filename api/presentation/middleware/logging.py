@@ -2,6 +2,7 @@ from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 import time
 from api.config.logging_config import get_logger
+from api.infrastructure.utils.idle_watcher import touch_last_request
 
 logger = get_logger(__name__)
 
@@ -10,6 +11,9 @@ class LoggingMiddleware(BaseHTTPMiddleware):
     """요청/응답 로깅 미들웨어"""
     
     async def dispatch(self, request: Request, call_next):
+        # 유휴 타이머 리셋
+        touch_last_request()
+
         # 요청 시작 시간
         start_time = time.time()
         
