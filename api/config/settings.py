@@ -85,8 +85,8 @@ class Settings(BaseSettings):
     # API Key 인증 (빈 리스트 = 인증 비활성화)
     API_KEYS: List[str] = []
 
-    # CORS 설정
-    CORS_ORIGINS: List[str] = ["*"]
+    # CORS 설정 (빈 리스트 = 모든 origin 차단, .env에서 설정)
+    CORS_ORIGINS: List[str] = []
     
     # 로깅
     LOG_LEVEL: str = "INFO"
