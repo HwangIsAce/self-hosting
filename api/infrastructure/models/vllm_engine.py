@@ -149,16 +149,27 @@ class VLLMEngine:
                 logger.warning("Continuing without Speculative Decoding")
         
         engine_args = AsyncEngineArgs(**engine_args_dict)
-        
-        # vLLM 엔진 초기화
-        self.llm = AsyncLLMEngine.from_engine_args(engine_args)
-        
+
+        # vLLM 엔진 초기화 (실패 시 GPU 메모리 정리)
+        try:
+            self.llm = AsyncLLMEngine.from_engine_args(engine_args)
+        except Exception as e:
+            logger.error(f"vLLM engine init failed, cleaning up GPU memory: {e}")
+            self.llm = None
+            self._loaded = False
+            try:
+                import torch
+                torch.cuda.empty_cache()
+            except Exception:
+                pass
+            raise
+
         # 토크나이저 로드 (채팅 템플릿용)
         self.tokenizer = AutoTokenizer.from_pretrained(
             self.model_name,
             trust_remote_code=settings.VLLM_TRUST_REMOTE_CODE
         )
-        
+
         self._loaded = True
         logger.info(f"vLLM model {self.model_name} loaded successfully")
         logger.info(f"  - GPU Memory Utilization: {settings.VLLM_GPU_MEMORY_UTILIZATION}")
