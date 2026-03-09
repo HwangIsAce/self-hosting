@@ -114,17 +114,51 @@ async def root():
 
 @app.get("/health")
 async def health():
-    """헬스체크 엔드포인트 (OCR 모델 로드 여부 포함)"""
-    ocr_model_loaded = False
+    """헬스체크 엔드포인트 (각 엔진 및 GPU 상태 포함)"""
+    result = {"status": "healthy", "engines": {}, "gpu": []}
+
+    # 엔진 상태
     try:
         from api.infrastructure.models.ocr_engine import OCREngine
-        ocr_model_loaded = (
+        result["engines"]["ocr"] = bool(
             OCREngine._model is not None
             and getattr(OCREngine, "_model_loaded", False)
         )
     except Exception:
+        result["engines"]["ocr"] = False
+
+    try:
+        from api.presentation.dependencies.get_services import get_model_router_service
+        router = get_model_router_service()
+        result["engines"]["llm"] = router.vllm_engine is not None and getattr(router.vllm_engine, "_loaded", False)
+        result["engines"]["vlm"] = router.vlm_engine is not None and getattr(router.vlm_engine, "_loaded", False)
+    except Exception:
         pass
-    return {"status": "healthy", "ocr_model_loaded": ocr_model_loaded}
+
+    try:
+        from api.infrastructure.utils.gpu2_lock import get_current_gpu2_engine
+        result["engines"]["gpu2_current"] = get_current_gpu2_engine()
+    except Exception:
+        pass
+
+    # GPU 메모리 정보
+    try:
+        import torch
+        if torch.cuda.is_available():
+            for i in range(torch.cuda.device_count()):
+                free, total = torch.cuda.mem_get_info(i)
+                used = total - free
+                result["gpu"].append({
+                    "id": i,
+                    "name": torch.cuda.get_device_name(i),
+                    "used_mb": round(used / 1024 / 1024),
+                    "total_mb": round(total / 1024 / 1024),
+                    "utilization_pct": round(used / total * 100, 1) if total > 0 else 0,
+                })
+    except Exception:
+        pass
+
+    return result
 
 
 if __name__ == "__main__":
