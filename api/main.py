@@ -21,6 +21,7 @@ from api.presentation.middleware.error_handler import (
 )
 from api.presentation.middleware.logging import LoggingMiddleware
 from api.presentation.middleware.auth import APIKeyAuthMiddleware
+from api.presentation.middleware.rate_limiter import RateLimitMiddleware
 from api.config.settings import settings
 from api.config.logging_config import setup_logging
 from api.infrastructure.utils.idle_watcher import idle_watcher_loop
@@ -102,7 +103,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 인증 미들웨어 (CORS 다음, 로깅 이전)
+# Rate limiting (인증 이후에 적용)
+app.add_middleware(RateLimitMiddleware)
+
+# 인증 미들웨어 (CORS 다음, rate limit 이전)
 app.add_middleware(APIKeyAuthMiddleware)
 
 # 로깅 미들웨어
