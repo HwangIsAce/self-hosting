@@ -26,7 +26,11 @@ logger = get_logger(__name__)
 
 class VLMEngine:
     """Qwen VLM 실행 엔진"""
-    
+
+    # GPU 1 동시 추론 방지용 세마포어 (한 번에 1개만 추론)
+    _inference_semaphore = asyncio.Semaphore(1)
+    _SEMAPHORE_TIMEOUT: float = 60.0
+
     def __init__(
         self,
         model_name: str,
@@ -66,7 +70,32 @@ class VLMEngine:
         """이미지-텍스트 멀티모달 생성"""
         if not self._loaded:
             self.load_model()
+
+        try:
+            await asyncio.wait_for(
+                self._inference_semaphore.acquire(),
+                timeout=self._SEMAPHORE_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            raise RuntimeError(
+                f"VLM engine busy — another inference is in progress. "
+                f"Try again after {self._SEMAPHORE_TIMEOUT}s."
+            )
         
+        try:
+            return await self._generate_impl(messages, temperature, max_tokens, top_p, **kwargs)
+        finally:
+            self._inference_semaphore.release()
+
+    async def _generate_impl(
+        self,
+        messages: List[Dict[str, Any]],
+        temperature: float,
+        max_tokens: int,
+        top_p: float,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """실제 추론 로직 (세마포어 내부에서 호출)"""
         # Qwen2-VL 형식의 메시지로 변환
         # OpenAI 형식에서 Qwen2-VL 형식으로 변환
         qwen_messages = []
