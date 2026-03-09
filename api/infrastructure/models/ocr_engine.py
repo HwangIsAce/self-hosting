@@ -73,10 +73,8 @@ class OCREngine:
         
         # device_map을 클래스 변수에 저장 (모델 로드 시 사용)
         OCREngine._device_map = self.device_map
-        
-        # 모델 초기화 (최초 1회만)
-        if HAS_CHANDRA_PACKAGE:
-            self._ensure_model_loaded()
+
+        # 모델은 gpu2_lock 내부에서 lazy load (레이스 컨디션 방지)
         register_gpu2_engine("ocr", OCREngine.unload_class)
     
     @classmethod
@@ -173,15 +171,10 @@ class OCREngine:
         prompt_type: str = "ocr_layout",
         max_tokens: int = 1024  # OCR에 적합한 기본값 (정확도와 속도의 균형)
     ) -> Dict[str, Any]:
-        """OCR 처리 - 항상 markdown, html, json 세 가지 형식을 모두 반환"""
-        # Docling 등으로 언로드된 경우 Chandra 모델 재로드
-        if HAS_CHANDRA_PACKAGE and (OCREngine._model is None or not OCREngine._model_loaded):
-            try:
-                OCREngine._ensure_model_loaded()
-                logger.info("Chandra OCR model (re)loaded for request")
-            except Exception as e:
-                logger.warning("Chandra model (re)load failed, will use manual fallback: %s", e)
+        """OCR 처리 - 항상 markdown, html, json 세 가지 형식을 모두 반환
 
+        모델 로딩은 gpu2_lock 내부에서만 수행합니다 (레이스 컨디션 방지).
+        """
         # Base64 이미지 디코딩
         image = await self._decode_base64_image(image_base64)
         if not image:
@@ -342,6 +335,10 @@ class OCREngine:
                 async with gpu2_lock():
                     unload_other_gpu2_engines(except_name="ocr")
                     set_current_gpu2_engine("ocr")
+                    # 락 내부에서 모델 재로드 (Docling 등이 언로드한 경우)
+                    if OCREngine._model is None or not OCREngine._model_loaded:
+                        OCREngine._ensure_model_loaded()
+                        logger.info("Chandra OCR model (re)loaded inside gpu2_lock")
                     try:
                         loop = asyncio.get_event_loop()
                         result = await loop.run_in_executor(None, generate_ocr)
